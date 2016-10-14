@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.camera.setting"
+    android:versionCode="303"
+    android:versionName="303" 
+    android:sharedUserId="android.uid.system">
+
+    <uses-sdk
+        android:minSdkVersion="19"
+        android:targetSdkVersion="23" />
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 允许程序访问有关GSM网络信息 -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 在SDCard中创建与删除文件权限 -->
+    <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
+    <!-- 往SDCard写入数据权限 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- 网络 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 允许访问振动设备 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 访问闪光灯 -->
+    <uses-permission android:name="android.permission.FLASHLIGHT" />
+    <!-- 相机 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 监听电话状态权限 -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.DEVICE_POWER" />
+    <uses-permission android:name="android.permission.REBOOT" />
+    
+    <uses-feature android:name="android.hardware.camera" />
+    <uses-feature android:name="android.hardware.camera.autofocus" />
+    <uses-feature android:name="android.hardware.camera.flash" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:persistent="true"
+        android:theme="@style/AppTheme" >
+
+        <!-- <activity -->
+        <!-- android:name="com.camera.setting.MainActivity" -->
+        <!-- android:label="@string/app_name" -->
+        <!-- android:screenOrientation="portrait" > -->
+        <!-- <intent-filter> -->
+        <!-- <action android:name="android.intent.action.MAIN" /> -->
+
+
+        <!-- <category android:name="android.intent.category.LAUNCHER" /> -->
+        <!-- </intent-filter> -->
+        <!-- </activity> -->
+
+        <receiver android:name="com.camera.setting.receiver.BootBroadcastReceiver" >
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                <action android:name="android.intent.action.PHONE_STATE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.updatexml" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name="com.camera.setting.receiver.AlarmReceiver" >
+            <intent-filter>
+                <action android:name="android.deivce.ALARM_START_1" />
+                <action android:name="android.deivce.ALARM_START_2" />
+                <action android:name="android.deivce.ALARM_START_3" />
+                <action android:name="android.deivce.ALARM_START_4" />
+                <action android:name="android.deivce.ALARM_START_5" />
+                <action android:name="android.deivce.ALARM_START_6" />
+                <action android:name="android.deivce.ALARM_CANCEL_1" />
+                <action android:name="android.deivce.ALARM_CANCEL_2" />
+                <action android:name="android.deivce.ALARM_CANCEL_3" />
+                <action android:name="android.deivce.ALARM_CANCEL_4" />
+                <action android:name="android.deivce.ALARM_CANCEL_5" />
+                <action android:name="android.deivce.ALARM_CANCEL_6" />
+                <action android:name="android.deivce.ALARM_RBOOT" />
+                <action android:name="android.deivce.DURING_DAY_MODEL" />
+                <action android:name="android.deivce.ALARM_TIME_ERROR" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name="com.camera.setting.GetKeyActivity"
+            android:screenOrientation="portrait" />
+
+        <service
+            android:name=".servics.BootCameraService"
+            android:enabled="true"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="android.camera.start" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".servics.UploadService"
+            android:enabled="true" >
+            <intent-filter>
+                <action android:name="android.camera.UPLOAD" />
+            </intent-filter>
+        </service>
+<!-- + by hcj @{-->
+        <receiver
+            android:name="com.cj.CjReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_REPLACED"/>
+                <data android:scheme="package"></data>
+            </intent-filter>
+        </receiver>
+<!-- + by hcj @}-->
+  
+    </application>
+
+</manifest>
