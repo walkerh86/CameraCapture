@@ -144,7 +144,7 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 							PowerManager manager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
 							manager.reboot("reboot");
 						}else if("dt2016-camera-dt2016".equalsIgnoreCase(msgTxt)){
-							sendBroadcast();
+							sendBroadcast(ACTION_SMS_RECEIVED);
 						}else{
 							try{
 								String [] arrText=msgTxt.split("-");
@@ -319,6 +319,11 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 				&& !password.equals("")) {
 			startCamera(context);
 		}
+		//+ by hcj @{
+		else if(ConfigUtil.DBG_NO_NET){
+			startCamera(context);
+		}
+		//+ by hcj @}
 		String triggerModel = Utils.getProperty(context,Utils.KEY_FTP_TRIGGERMODEL);
 		System.out.println("guosong---triggerModel="+triggerModel);
 		TakepictureTiem takepictureTiem = new TakepictureTiem(context);
@@ -651,6 +656,9 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 		String tiem4 = Utils.getProperty(context, Utils.KEY_FTP_TIEM4);
 		String tiem5 = Utils.getProperty(context, Utils.KEY_FTP_TIEM5);
 		String tiem6 = Utils.getProperty(context, Utils.KEY_FTP_TIEM6);
+		if(ConfigUtil.DBG_TIMER){
+			Log.i(ConfigUtil.TAG_TIMER,"setTiemTriggerModel,tiem1="+tiem1+",tiem2="+tiem2+",tiem3="+tiem3+",tiem4="+tiem4+",tiem5="+tiem5+",tiem6="+tiem6);
+		}
 		String[] tiem_1 = Utils.getTiem(tiem1);
 		String[] tiem_2 = Utils.getTiem(tiem2);
 		String[] tiem_3 = Utils.getTiem(tiem3);
@@ -858,6 +866,12 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 					Utils.saveSysProperty(mContext, Utils.KEY_SYS_INIT, false);
 					readXml(mContext,true,Utils.XML_PATH);
   		          }else{
+			//+ by hcj @{		
+				//if(ConfigUtil.DBG_NO_NET){
+					//readXml(mContext,false,Utils.XML_PATH);
+					//break;
+				//}
+			//+ by hcj @}	
   		        	Log.i(TAG, "--xml camera upload file service...");
   		        	intent.setAction(Utils.CAMERA_UPLOAD_FILE_SERVICE_ACTION);
   		        	intent.setClass(mContext, UploadService.class);
@@ -917,6 +931,7 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
   				intent1.setAction(Utils.CAMERA_TAKEPICTURE_ACTION);
   				intent1.putExtra(Utils.INTENT_TAKINGMODEL, Integer.parseInt(takingModel));
   				intent1.putExtra(Utils.INTENT_FILESIZE,  Integer.parseInt(fileSize));
+				intent1.putExtra("takepic_action","SET_TAKING_MODEL");//+ by hcj
   				mContext.sendBroadcast(intent1);
   				handler.removeMessages(END_CALL);
   				handler.removeMessages(SET_TAKING_MODEL);
@@ -927,10 +942,10 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 				Log.i(TAG, "--scanCode:"+scanCode);
 				String triggerModel = Utils.getProperty(mContext,Utils.KEY_FTP_TRIGGERMODEL);
 				if(triggerModel.equals("1") && scanCode == KET_LE_TRIGGER){//电平触发
-					cameraTakepicture(scanCode);
+					cameraTakepicture(scanCode,"getkey KET_LE_TRIGGER");//m by hcj
 				}
 				else if (scanCode == KET_TEST_TRIGGER) {//测试触发
-					cameraTakepicture(scanCode);
+					cameraTakepicture(scanCode,"getkey KET_TEST_TRIGGER");//m by hcj
 				}
   				break;
   			default:
@@ -938,10 +953,11 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
   			}
   		}
   	};
-  	public void sendBroadcast(){
+  	public void sendBroadcast(String takeAction){
   		Intent intent1 = new Intent();
 		intent1.setAction(Utils.CAMERA_TAKEPICTURE_ACTION);
 		intent1.putExtra("dx", true);
+		intent1.putExtra("takepic_action",takeAction);//+ by hcj
 		mContext.sendBroadcast(intent1);
   	}
   	 public synchronized  boolean isFastClick(final int scanCode) {
@@ -951,7 +967,7 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 	        		public void run() {
 	        			try {
 							Thread.sleep(1000);
-							cameraTakepicture(scanCode);
+							cameraTakepicture(scanCode,"isFastClick");
 						} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
@@ -967,11 +983,12 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 	        return false;   
 	    }
 	
-	 public void cameraTakepicture(int scanCode) {
+	 public void cameraTakepicture(int scanCode,String takeAction) {//m by hcj
 	        if (!isFastClick(scanCode)) {
 	        	
 	        	Intent intent = new Intent();
 				intent.setAction(Utils.CAMERA_TAKEPICTURE_ACTION);
+				intent.putExtra("takepic_action",takeAction);//+ by hcj
 				String takingModel = Utils.getProperty(mContext,Utils.KEY_FTP_TAKINGMODEL);
 				String fileSize = Utils.getProperty(mContext,Utils.KEY_FTP_FILESIZE);
 				if(scanCode == KET_TEST_TRIGGER){//电平测试

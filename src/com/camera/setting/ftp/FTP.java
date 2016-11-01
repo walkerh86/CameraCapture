@@ -40,7 +40,7 @@ public class FTP {
 	/**
 	 * FTP连接.
 	 */
-	private FTPClient ftpClient;
+	/*private*/public FTPClient ftpClient;//m by hcj
 
 	public FTP(Context context){
 		this.hostName=Utils.getProperty(context, Utils.KEY_FTP_URL);

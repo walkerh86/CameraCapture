@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.math.BigInteger;
 
 import org.apache.commons.net.ftp.FTPFile;
 
@@ -24,6 +23,8 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemProperties;
 import android.util.Log;
 import android.content.pm.IPackageInstallObserver;
@@ -44,6 +45,8 @@ public class UpgradeManager implements Runnable{
 	private static final int UPGRADE_RET_FAIL_MD5 = 1;
 	private static final int UPGRADE_RET_FAIL_INSTALL = 2;
 	private boolean mApkUpgradeChecked;
+	private static final String BIN_PREFIX = "CaptureCamera_";
+	private boolean mUpgradeRetSuccess;
 
 	@Override
 	public void run(){
@@ -54,7 +57,7 @@ public class UpgradeManager implements Runnable{
 			}
 			apkCheckUpgrade();
 			try {
-				Thread.sleep(1000*20);
+				Thread.sleep(1000*60*5);
 			} catch (InterruptedException e) {
 			}
 		}
@@ -73,6 +76,7 @@ public class UpgradeManager implements Runnable{
 		}
 
 		mFtpClient = new FTP(context);
+		mFtpClient.ftpClient.setConnectTimeout(ConfigUtil.SRV_CONNECT_TIMEOUT);
 		mDeviceId = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
 		Log.i(ConfigUtil.TAG_UPGRADE,"UpgradeManager mLocalVerCode="+mLocalVerCode+",mDeviceId="+mDeviceId);
 
@@ -132,7 +136,7 @@ public class UpgradeManager implements Runnable{
 			for(FTPFile file : files){
 				Log.i(ConfigUtil.TAG_UPGRADE,"update dir file:"+file.getName());
 				String name = file.getName();
-				if(name.endsWith("apk")){
+				if(name.startsWith(BIN_PREFIX) && name.endsWith(".bin")){
 					mUpgradeApkName = name;
 					break;
 				}
@@ -142,6 +146,7 @@ public class UpgradeManager implements Runnable{
 		boolean doUpgrade = false;
 		if(mUpgradeApkName != null){
 			//get md5 value
+			/*
 			String md5Prefix = mUpgradeApkName.replace("apk","md5")+".";
 			String md5Name = null;
 			for(FTPFile file : files){
@@ -152,23 +157,39 @@ public class UpgradeManager implements Runnable{
 					break;
 				}
 			}
+			*/
+			String nameNoPrefix = mUpgradeApkName.substring(BIN_PREFIX.length());
+			int seperatorIdx = nameNoPrefix.indexOf("_");
+			int md5BeginIdx = seperatorIdx+1;
+			int md5EndIdx = nameNoPrefix.lastIndexOf(".");
+			if(md5EndIdx > md5BeginIdx){
+				mUpgradeMd5Value = nameNoPrefix.substring(md5BeginIdx,md5EndIdx);
+			}
 			if(mUpgradeMd5Value == null || mUpgradeMd5Value.length() < 1){
-				Log.i(ConfigUtil.TAG_UPGRADE,"apkCheckUpgrade remote md5 invalid:"+md5Name);
+				Log.i(ConfigUtil.TAG_UPGRADE,"apkCheckUpgrade remote md5 invalid:"+mUpgradeMd5Value);
 				return;
 			}
 			//get apk version
+			/*
 			int verCodeBeginIdx = mUpgradeApkName.lastIndexOf("_");
 			if(verCodeBeginIdx > -1){
 				verCodeBeginIdx++;
 			}
 			int verCodeEndIdx = mUpgradeApkName.lastIndexOf(".");
+			*/
+			int verCodeBeginIdx = 0;
+			int verCodeEndIdx = seperatorIdx;
 			if(verCodeEndIdx > verCodeBeginIdx){
 				//should catch exception here
-				int remoteVerCode = Integer.valueOf(mUpgradeApkName.substring(verCodeBeginIdx,verCodeEndIdx));
-				Log.i(ConfigUtil.TAG_UPGRADE,"remoteVerCode="+remoteVerCode);
-				if(remoteVerCode > mLocalVerCode){
-					doUpgrade = true;
-					mTargetVerCode = remoteVerCode;
+				try{
+					int remoteVerCode = Integer.valueOf(nameNoPrefix.substring(verCodeBeginIdx,verCodeEndIdx));
+					Log.i(ConfigUtil.TAG_UPGRADE,"remoteVerCode="+remoteVerCode);
+					if(remoteVerCode > mLocalVerCode){
+						doUpgrade = true;
+						mTargetVerCode = remoteVerCode;
+					}
+				}catch(Exception e){
+					Log.i(ConfigUtil.TAG_UPGRADE,"apkCheckUpgrade e="+e);
 				}
 			}else{
 				Log.i(ConfigUtil.TAG_UPGRADE,"apkCheckUpgrade remote apk name invalid:"+mUpgradeApkName);
@@ -179,7 +200,8 @@ public class UpgradeManager implements Runnable{
 			mIsUpgrading =  true;
 			Log.i(ConfigUtil.TAG_UPGRADE, "apkCheckUpgrade mIsUpgrading true");
 			try{
-				mFtpClient.downloadSingleFile(remotePath+"/"+mUpgradeApkName,"//sdcard/Download/",mUpgradeApkName,new DownLoadProgressListener(){
+				String localApkName = mUpgradeApkName.replace(".bin",".apk");
+				mFtpClient.downloadSingleFile(remotePath+"/"+mUpgradeApkName,"//sdcard/Download/",localApkName,new DownLoadProgressListener(){
 					@Override
 					public void onDownLoadProgress(String currentStep,long downProcess, File file) {
 						if (currentStep.equals(Utils.FTP_DOWN_SUCCESS)) {
@@ -192,7 +214,10 @@ public class UpgradeManager implements Runnable{
 							}
 						}else if(currentStep.equals(Utils.FTP_DOWN_FAIL)){
 							mIsUpgrading =  false;
-							Log.i(ConfigUtil.TAG_UPGRADE, "apkCheckUpgrade mIsUpgrading false by onDownLoadProgress fail");
+							Log.i(ConfigUtil.TAG_UPGRADE, "apkCheckUpgrade mIsUpgrading false by onDownLoadProgress FTP_DOWN_FAIL");
+						}else if(currentStep.equals(Utils.FTP_FILE_NOTEXISTS)){
+							mIsUpgrading =  false;
+							Log.i(ConfigUtil.TAG_UPGRADE, "apkCheckUpgrade mIsUpgrading false by onDownLoadProgress FTP_FILE_NOTEXISTS");
 						}
 					}
 				});
@@ -224,8 +249,7 @@ public class UpgradeManager implements Runnable{
 			Log.i(ConfigUtil.TAG_UPGRADE,"apkCheckMd5 e="+e);
 			return false;
 		}
-  		BigInteger bigInt = new BigInteger(1, digest.digest());
-		String md5Value = bigInt.toString(16);
+		String md5Value = md5Hex(digest.digest());
 		Log.i(ConfigUtil.TAG_UPGRADE, "md5Value="+md5Value);
 		Log.i(ConfigUtil.TAG_UPGRADE, "mUpgradeMd5Value="+mUpgradeMd5Value);
 		if(mUpgradeMd5Value.equalsIgnoreCase(md5Value)){
@@ -255,9 +279,9 @@ public class UpgradeManager implements Runnable{
 		Log.i(ConfigUtil.TAG_UPGRADE, "apkSetResult mainCode="+mainCode+",subCode="+subCode);
 		String retName = null;
 		if(mainCode == 0){
-			retName = "ver_"+verCode+".ret.ok";
+			retName = BIN_PREFIX+verCode+".ret.ok";
 		}else{
-			retName = "ver_"+verCode+".ret."+mainCode+"."+subCode;
+			retName = BIN_PREFIX+verCode+".ret."+mainCode+"."+subCode;
 		}
 		String localRetName = "//sdcard/Download/"+retName;
 		String remoteRetName = mDeviceId+"/updata/"+retName;
@@ -265,15 +289,36 @@ public class UpgradeManager implements Runnable{
 		try {
 			File localRetFile = new File(localRetName);
 			localRetFile.createNewFile();
-			
-			mFtpClient.uploadingSingle(remoteRetName,localRetName, new UploadProgressListener(){
-				@Override
-				public void onUploadProgress(String currentStep, long uploadSize, File file){
-					if(currentStep.equals(Utils.FTP_UPLOAD_SUCCESS)){
-						file.delete();
+			/*
+			if(mLoopHander == null){
+				mLoopHander = new LoopHander();
+			}
+			final UpgradeResultProcess resultProcess = new UpgradeResultProcess(5000,remoteRetName,localRetName);
+			mLoopHander.addPorcess(resultProcess);
+			*/
+			mUpgradeRetSuccess = false;
+			for(int i=0;i<3;i++){
+				mFtpClient.uploadingSingle(remoteRetName,localRetName, new UploadProgressListener(){
+					@Override
+					public void onUploadProgress(String currentStep, long uploadSize, File file){
+						if(currentStep.equals(Utils.FTP_UPLOAD_SUCCESS)){
+							file.delete();
+							mUpgradeRetSuccess = true;
+						}else{
+							Log.i(ConfigUtil.TAG_UPGRADE, "apkSetResult onUploadProgress fail reseaon="+currentStep);
+						}
+					}
+				});
+				if(mUpgradeRetSuccess){
+					break;
+				}else{
+					try {
+						Thread.sleep(2000);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
 					}
 				}
-			});
+			}
 		} catch (IOException e) {
 			Log.i(ConfigUtil.TAG_UPGRADE, "apkSetResult e="+e);
 		}
@@ -291,8 +336,108 @@ public class UpgradeManager implements Runnable{
 				UpgradeManager.this.mLocalVerCode = UpgradeManager.this.mTargetVerCode;
 				apkSetResult(UPGRADE_RET_OK,0);
 			}else{
-				apkSetResult(UPGRADE_RET_FAIL_MD5,UPGRADE_RET_FAIL_INSTALL);
+				apkSetResult(UPGRADE_RET_FAIL_INSTALL,returnCode);
 			}
+		}
+	}
+	
+	//md5 utils
+	private static char[] DIGITS_LOWER = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+	private static String md5Hex(byte[] data) {
+		int l = data.length;
+		char[] out = new char[l<<1];
+		// two characters form the hex value.
+		for (int i = 0, j = 0; i <  l; i++) {
+			out[j++] = DIGITS_LOWER[(0xF0 & data[i])>>4];
+			out[j++] = DIGITS_LOWER[0x0F & data[i]];
+		}
+		return new String(out);
+	}
+
+	public class UpgradeResultProcess extends LoopProcess{
+		String mRemote;
+		String mLocal;
+		boolean mFinish;
+		public UpgradeResultProcess(int period, String remoteRetName,String localRetName){
+			super(period);
+			mRemote = remoteRetName;
+			mLocal = localRetName;
+		}
+		public boolean LoopRun(){
+			mFinish = false;
+			mFtpClient.uploadingSingle(mRemote,mLocal, new UploadProgressListener(){
+				@Override
+				public void onUploadProgress(String currentStep, long uploadSize, File file){
+					if(currentStep.equals(Utils.FTP_UPLOAD_SUCCESS)){
+						//file.delete();
+						//mFinish = true;
+					}else{
+						Log.i(ConfigUtil.TAG_UPGRADE, "UpgradeResultProcess onUploadProgress step="+currentStep);
+					}
+				}
+			});
+			return mFinish;
+		}
+	}
+
+	public interface LoopCallback{
+		void onFinish(LoopProcess process);
+		void onNext(LoopProcess process);
+	}
+
+	public class LoopProcess implements Runnable{
+		private int mPeriod;
+		private LoopCallback mCb;
+		public LoopProcess(int period){
+			mPeriod = period;
+		}
+
+		public void setCallback(LoopCallback cb){
+			mCb = cb;
+		}
+
+		public boolean LoopRun(){
+			return false;
+		}
+
+		public int getPeriod(){
+			return mPeriod;
+		}
+
+		@Override
+		public void run(){
+			Log.i(ConfigUtil.TAG_UPGRADE,"LoopProcess run");
+			if(LoopRun()){
+				if(mCb != null){
+					mCb.onFinish(this);
+				}
+			}else{
+				if(mCb != null){
+					mCb.onNext(this);
+				}
+			}
+		}
+	}
+	private class LoopHander extends Handler implements LoopCallback{
+		//SparseArray<LoopProcess> mProcesses = new SparseArray<LoopProcess>(2);
+		//private Handler mHandler = new Handler();
+		
+		public LoopHander(){
+		}
+
+		public void addPorcess(LoopProcess process){
+			//mProcesses.add(process);
+			process.setCallback(this);
+			/*mHandler*/this.postDelayed(process,process.getPeriod());
+		}
+
+		public void onFinish(LoopProcess process){
+			Log.i(ConfigUtil.TAG_UPGRADE,"onFinish");
+		}
+		
+		public void onNext(LoopProcess process){
+			Log.i(ConfigUtil.TAG_UPGRADE,"onNext");
+			/*mHandler*/this.postDelayed(process,process.getPeriod());
 		}
 	}
 }

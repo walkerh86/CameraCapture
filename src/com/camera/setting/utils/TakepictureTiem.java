@@ -13,6 +13,10 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.SystemClock;
+//+ by hcj @{
+import com.cj.ConfigUtil;
+import android.util.Log;
+//+ by hcj @}
 
 /**
  * 
@@ -121,6 +125,11 @@ public class TakepictureTiem {
 		PendingIntent sender = PendingIntent.getBroadcast(mContext,requestCode, intent,PendingIntent.FLAG_CANCEL_CURRENT);
 		Calendar calendar =Calendar.getInstance();
 		calendar.setTimeInMillis(System.currentTimeMillis()); 
+		//+ by hcj @}
+		if(ConfigUtil.DBG_TIMER){
+			Log.i(ConfigUtil.TAG_TIMER,"startTakepictureTiem,currHour="+calendar.get(Calendar.HOUR)+",alarmHour="+hour+",alarmMin="+startMin);
+		}
+		//+ by hcj @}
 		calendar.set(Calendar.HOUR_OF_DAY, hour);        //是24小时制，第二参数几小时以后 
         calendar.set(Calendar.MINUTE, startMin);            //设置闹钟的分钟数
        // Random random = new Random();
@@ -150,6 +159,11 @@ public class TakepictureTiem {
 	    Calendar calendar =Calendar.getInstance();
 	    //calendar.add(calendar.MINUTE, timeInMillis);
 	    if(action.equals(Utils.DURING_DAY_MODEL)){
+		//+ by hcj @{	
+		if(ConfigUtil.DBG_ISO){
+			timeInMillis = 2;
+		}
+		//+ by hcj @}
 	    	if(albarmTimers == 10){
 	    		calendar.add(calendar.MINUTE, timeInMillis+1);
 	    	} else {

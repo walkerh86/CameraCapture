@@ -56,6 +56,7 @@ import android.widget.FrameLayout;
 //+ by hcj @{
 import com.cj.ConfigUtil;
 import com.cj.UpgradeManager;
+import java.util.TimeZone;
 //+ by hcj @}
 
 public class BootCameraService extends Service implements PreviewCallback,SurfaceHolder.Callback{
@@ -114,6 +115,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
     	}
 		Random random = new Random();
 		uploadSleep=random.nextInt(59);
+		//+ by hcj @{
+		//修复定时拍照模式到达时间段界限后不再拍照问题
+		if(uploadSleep == 0){
+			uploadSleep=1;
+		}	
+		//+ by hcj @}
 		fileSize = Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
 		System.out.println("fileseize------------------"+fileSize);
 		String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
@@ -125,6 +132,10 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		            while (true) {
 		            	int key=AlytJni.readSpiSrdy(fd);
 		            	if(-1!=key && 88!=key && 68!=key){
+					if(ConfigUtil.FEATURE_DISABLE_TAKEPIC_ON_NIGHT && !flagDay){
+						Log.i(ConfigUtil.TAG,"skip take picture on night mode");
+						continue;
+					}
 		                  //  Message msg = new Message();
 		                   // handler.sendEmptyMessage(START_CAMERA);
 		            		int times=Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
@@ -132,6 +143,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		            		photonum+=times;
 		            		Log.i(TAG, "photonum4="+String.valueOf(photonum));
 		            		System.out.println("------------key-------------------"+photonum);
+					Log.i(ConfigUtil.TAG_CONTINUES,"startWork by key trigger");
 		            		startWork();
 		            	}
 		            }
@@ -159,6 +171,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			            		}
 			            		photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 			            		Log.i(TAG, "photonum5="+String.valueOf(photonum));
+						Log.i(ConfigUtil.TAG_CONTINUES,"startWork by key 67");
 			            		startWork();
 			                    System.out.println("------------key--------67-----------"+photonum);
 			            	}
@@ -170,10 +183,22 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		}
 //+ by hcj @{
 		new Thread(new UpgradeManager(BootCameraService.this)).start();
+		sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+		DayNightModeInit();
 //+ by hcj @}
 	}
 	public void startWork(){
-		System.out.println("guosong statwork flagseep"+flagSeelp);
+		//+ by hcj @{
+		Log.i(ConfigUtil.TAG_CONTINUES,"mCamera="+mCamera);
+		/*
+		if(mStartWork){
+			Log.i(ConfigUtil.TAG_CONTINUES,"startWork skip by key too fast!");
+			return;
+		}
+		mStartWork = true;*/
+		//+ by hcj @}
+		
+		//System.out.println("guosong statwork flagseep"+flagSeelp);
 		//if (mTimer != null){
 		//	return;
 		//}
@@ -190,6 +215,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			}
           //  }
             flag=true;
+		  //+ by hcj @{
+		  if(isLightEnable(BootCameraService.this)){
+		  	setLight(LIGHT_ON);
+		  }
+		  //+ by hcj @}
+		Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa startWork time="+System.currentTimeMillis());  
             mCamera.setOneShotPreviewCallback(BootCameraService.this);
             
             getmTimer();
@@ -235,13 +266,18 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	@Override
 	public void surfaceDestroyed(SurfaceHolder holder) {
 		Log.i(TAG, "--surfaceDestroyed");
-		stopCamera();
+		stopCamera("surfaceDestroyed");
 	}
 
 	@Override
 	public void onPreviewFrame(byte[] arg0, Camera camera) {
-		System.out.println(photonum+"-------"+fileSize);
-		IO.cmd(3);
+		//System.out.println(photonum+"-------"+fileSize);
+		//+ by hcj @{
+		Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa onPreviewFrame time="+System.currentTimeMillis()); 
+		//mStartWork = false;
+		setLight(LIGHT_OFF);
+		//+ by hcj @}
+		//IO.cmd(3);//- by hcj
 		Log.i(TAG, "onPreviewFrame ?photonum");
 		if (photonum>0) {
 			Log.i(TAG, "onPreviewFrame photonum>0");
@@ -249,7 +285,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			System.out.println("photonum="+photonum);
 			if(photonum==0){
 				Log.i(TAG, "onPreviewFrame photonum==0");
-				IO.cmd(3);
+				//IO.cmd(3);//- by hcj
+				setLight(LIGHT_OFF);//+ by hcj
 				flag = false;
 			}
 			Message msg = new Message();
@@ -292,7 +329,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
             executor.execute(new Runnable() {
 				@Override
 				public void run() {
-					IO.cmd(3);
+					//IO.cmd(3);//- by hcj
+					setLight(LIGHT_OFF);//+ by hcj
 					String index = "A";
 					switch (takingID) {
 					case 2:
@@ -338,7 +376,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		        	}
 				}
             });
-	        stopCamera();
+	        stopCamera("jpegCalback");
         }  
     }; 
     
@@ -363,8 +401,14 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 						Log.i(TAG, "mCamera null");
 					}
 				}
+				//+ by hcj @{
+				if(intent.hasExtra("takepic_action")){
+					Log.i(ConfigUtil.TAG_TAKEPIC,"takepic_action="+intent.getStringExtra("takepic_action"));
+				}
+				//+ by hcj @}
 				photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 				Log.i(TAG, "photonum1="+String.valueOf(photonum));
+				Log.i(ConfigUtil.TAG_CONTINUES,"startWork by timer");
 				startWork();
 				
 			}else if("com.gs.getIso".equals(intent.getAction())){
@@ -382,8 +426,20 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		}
 	};
 	public void getIsoVaule(){
+		//+ by hcj @{
+		Log.i(ConfigUtil.TAG,"getIsoVaule FEATURE_DAY_NIGHT_CHECK_POLICY="+ConfigUtil.FEATURE_DAY_NIGHT_CHECK_POLICY);
+		if(ConfigUtil.FEATURE_DAY_NIGHT_CHECK_POLICY == ConfigUtil.DAY_NIGHT_CHECK_ONLY_AUTOLIGHT_ON){
+			String auto_lighte=Utils.getProperty(this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
+			if("0".equals(auto_lighte)){
+				Log.i(ConfigUtil.TAG,"getIsoVaule skip by auto light off!");
+				setLight(LIGHT_OFF,this);
+				DayNightModeSet(true,2);
+				return;
+			}
+		}
+		//+ by hcj @}
 		String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
-		if("3".equals(triggerModel)){
+		if(/*"3".equals(triggerModel)*/true){//m by hcj
 			
 			Log.i(TAG, "---startCamera getIsoVaule");
 			if(mCamera==null){
@@ -394,7 +450,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 				fileSize=Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
 				String[] size = ImgSize.getImgSize(fileSize);
 			    if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
-					params.set("zsd-mode", "on");
+					params.set("zsd-mode", "off");
 				}
 				if(key68){
 					params.setPreviewSize(320, 240);
@@ -436,7 +492,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			params.setPreviewSize(width, height);
 			//params.setSceneMode(Camera.Parameters.SCENE_MODE_SPORTS);
 			if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
-			params.set("zsd-mode", "on");}
+			params.set("zsd-mode", "off");}
 			//params.setPreviewFrameRate(30);
 			//params.setBrightnessMode(value);
 			//params.setb
@@ -478,7 +534,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			height = Integer.parseInt(size[0]);
 		    width = Integer.parseInt(size[1]);
 		    if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
-				params.set("zsd-mode", "on");}
+				params.set("zsd-mode", "off");}
 		    Log.i(TAG, "--width:+"+width+" height:"+height);
 			//params.setPictureSize(width, height);
 			if(key68){
@@ -489,10 +545,17 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			//params.setPreviewFrameRate(30);
 			String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
 			String auto_lighte=Utils.getProperty(BootCameraService.this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
-			if("3".equals(triggerModel) && !"0".equals(auto_lighte)&&!flagDay){
+			Log.i(ConfigUtil.TAG_LIGHT,"startCamera1 auto_lighte="+auto_lighte+",flagDay="+flagDay);
+			//if("3".equals(triggerModel) && !"0".equals(auto_lighte)&&!flagDay){//- by hcj
+			if(isLightEnable(BootCameraService.this)){//+ by hcj
 				IO.cmd(14);
-				IO.cmd(2);
-				
+				//IO.cmd(2);//- by hcj
+				setLight(LIGHT_ON);
+				//+ by hcj @{
+				if(ConfigUtil.DBG_LIGHT){
+					Log.i(ConfigUtil.TAG_LIGHT,"startCamera1 IO.cmd(2)");
+				}
+				//+ by hcj @}
 			}
 			//params.setExposureCompensation(ImgSize.getExposure(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_TIEM))));
 			//params.setWhiteBalance(ImgSize.getWhiteBalance(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_WHITE_BALANCE))));
@@ -504,6 +567,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
+			Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa startWork time="+System.currentTimeMillis());  
 			mCamera.setOneShotPreviewCallback(BootCameraService.this);
 			preview = true;
 			key68=false;
@@ -515,6 +579,17 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	Timer mTimer;
 	public void getmTimer()
 	{
+		//+ by hcj @{
+		if(ConfigUtil.FEATURE_CAMERA_SLEEP_POLICY == ConfigUtil.CAMERA_SLEEP_NEVER){
+			Log.i(ConfigUtil.TAG,"getmTimer skip by nerver sleep");
+			return;
+		}else if(ConfigUtil.FEATURE_CAMERA_SLEEP_POLICY == ConfigUtil.CAMERA_SLEEP_NIGHT_ONLY){
+			if(flagDay) {
+				Log.i(ConfigUtil.TAG,"getmTimer skip by day mode");
+				return;
+			}
+		}
+		//+ by hcj @}
 		if (mTimer != null || "".equals(mTimer))
 		{
 			mTimer.cancel();
@@ -529,11 +604,17 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			@Override
 			public void run()
 			{
-				IO.cmd(3);
+				//IO.cmd(3);//- by hcj
+				setLight(LIGHT_OFF);//+ by hcj
+				//+ by hcj @{
+				if(ConfigUtil.DBG_LIGHT){
+					Log.i(ConfigUtil.TAG_LIGHT,"getmTimer IO.cmd(3)");
+				}
+				//+ by hcj @}
 				//if(!"3".equals(triggerModel)){
 					//setSleepfalg(0);
 				//}else{
-				stopCamera();
+				stopCamera("getmTimer");
 				//}
 				mTimer.cancel();
 				mTimer=null;
@@ -545,21 +626,30 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	static Boolean flagDay=true;//true 白天 false 黑夜
 	public static void flagDay(Context context){
 		try{
+			/*- by hcj
 			String auto_lighte=Utils.getProperty(context, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
 			System.out.println("guotest==auto="+auto_lighte);
 			if("0".equals(auto_lighte)){
 				flagDay=true;
-				IO.cmd(3);
-				setDev(2);
+				//IO.cmd(3);//- by hcj
+				setLight(LIGHT_OFF,context);//+ by hcj
+				//IO.cmd(15);//+ by hcj
+				//setDev(2);
+				DayNightModeSet(true,2);
 				return;
 			}
+			*/
 			String iso_value=SystemProperties.get("camera.iso.value");
 			String exptime=SystemProperties.get("camera.exptime.value");
 			int getSetExp=ImgSize.getExposure(Integer.parseInt(Utils.getProperty(context, Utils.KEY_FTP_IMG_TIEM)));
 			Boolean curDay=true;
+			Log.i(ConfigUtil.TAG_LIGHT,"flagDay iso_value="+iso_value+",ftp_exptime="+getSetExp+",real_exptime="+exptime);//+ by hcj
+			DayNightModeCheck(context, Integer.parseInt(iso_value), getSetExp, Integer.parseInt(exptime));
+			/*
 			System.out.println((flagDay!=curDay)+"=guoiso_value="+iso_value+"getSetExp="+getSetExp+"extime="+exptime);
 			if(getSetExp!=2 && getSetExp<Integer.parseInt(exptime)){
 				System.out.println("guosong--getSetExp<=Integer.parseInt(exptime)");
+				Log.i(ConfigUtil.TAG_LIGHT,"Night mode by getSetExp!=2 && getSetExp<Integer.parseInt(exptime)");//+ by hcj
 				setDev(getSetExp);
 				IO.cmd(14);
 				flagDay=false;
@@ -567,11 +657,13 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			}
 			else if(Integer.parseInt(iso_value)<=200){
 				if(getSetExp<Integer.parseInt(exptime)){
+					Log.i(ConfigUtil.TAG_LIGHT,"Night mode by iso_value <= 200 && getSetExp<Integer.parseInt(exptime)");//+ by hcj
 					System.out.println("guosong1 iso_value<=200");
 					IO.cmd(14);
 					flagDay=false;
 					setDev(getSetExp);
 				}else{
+					Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value <= 200 && getSetExp>=Integer.parseInt(exptime)");//+ by hcj
 					System.out.println("guosong2 iso_value<=200");
 					IO.cmd(15);
 					flagDay=true;
@@ -579,12 +671,14 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 					setDev(2);
 				}
 			}else{
+				Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value > 200");//+ by hcj
 					System.out.println("guosong iso_value>=200");
 				IO.cmd(15);
 				flagDay=true;
 				//setCameraState(flagDay);
 				setDev(2);
 			}
+			*/
 			}catch(Exception e){
 				System.out.println("guoso------------------erro");
 				e.printStackTrace();
@@ -601,17 +695,20 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	}
 	public static void setDev(Object o){
 		String cmd = String.format("echo %s > %s\n", o, "/sys/bus/platform/drivers/extval/extval_val");
-		System.out.println("guosong setDev===="+cmd);
+		Log.i(ConfigUtil.TAG,"setDev cmd="+cmd);
+		//System.out.println("guosong setDev===="+cmd);
         try {
             Process exeEcho = Runtime.getRuntime().exec("sh");
             exeEcho.getOutputStream().write(cmd.getBytes());
             exeEcho.getOutputStream().flush();
         } catch (IOException e) {
-        	e.printStackTrace();
+        	//e.printStackTrace();
+        	Log.i(ConfigUtil.TAG,"setDev e="+e);
         }
 	}
-	private void stopCamera() {
-		Log.i(TAG, "--stopCamera");
+	private void stopCamera(String reseaon) {
+		//Log.i(TAG, "--stopCamera");
+		Log.i(ConfigUtil.TAG,"stopCamera by "+reseaon+",mCamera="+mCamera);
 		if (mCamera != null) {
 			if (preview){
 				mCamera.setOneShotPreviewCallback(null);
@@ -691,7 +788,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   		 			            Log.e(TAG, "--BroadcastReceiver error",e);  
   		 			        }
   		 					try {
-  		 						IO.cmd(2);
+  		 						//IO.cmd(2);//- by hcj
+								//+ by hcj @{
+								if(ConfigUtil.DBG_LIGHT){
+									Log.i(ConfigUtil.TAG_LIGHT,"handleMessage IO.cmd(2)");
+								}
+								//+ by hcj @}
   		 						photonum++;
   		 						Log.i(TAG, "photonum2="+String.valueOf(photonum));
   		 						//mCamera.takePicture(null, null, jpegCalback);
@@ -710,13 +812,21 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   				
   				break;
   			case SET_GPIO:
-  				IO.cmd(3);
+  				//IO.cmd(3);//- by hcj
+  				setLight(LIGHT_OFF);//+ by hcj
+				//+ by hcj @{
+				if(ConfigUtil.DBG_LIGHT){
+					Log.i(ConfigUtil.TAG_LIGHT,"SET_GPIO IO.cmd(3)");
+				}
+				//+ by hcj @}
 	            handler.removeMessages(SET_GPIO);
   				break;
   			case 100:
+				Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa handleMessage time="+System.currentTimeMillis()); 
   				System.out.println("guosong msg.what=100="+photonum);
   				if(photonum>0){
   					Log.i(TAG, "photonum>0");
+					Log.i(ConfigUtil.TAG_CONTINUES,"startWork by continues");
   					startWork();
   				}
 				final byte[] data = (byte[]) msg.obj;
@@ -776,6 +886,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   				break;
   			case 102:
   				System.out.println("guosong startWork"+msg.what);
+				Log.i(ConfigUtil.TAG_CONTINUES,"startWork by handleMessage 102");
   				startWork();
   				break;
   			case 103:
@@ -862,7 +973,87 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	public void setImgPaht(String imgPaht) {
 		this.imgPaht = imgPaht;
 	}
-  	
-  	
+	
+  	//+ by hcj @{
+  	//private boolean mStartWork = false;
+	
+  	private static final int LIGHT_ON = 2;
+	private static final int LIGHT_OFF = 3;
+  	private static void setLight(int state, Context context){
+		if(!"3".equals(Utils.getProperty(context,Utils.KEY_FTP_TRIGGERMODEL))){
+			Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by trigger mode non timer");
+			return;
+		}else if(flagDay && (state == LIGHT_ON)){
+			Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by Day mode");
+			return;
+		}
+		Log.i(ConfigUtil.TAG_LIGHT,"setLight state="+state);
+		IO.cmd(state);
+  	}
 
+	private void setLight(int state){
+		setLight(state,this);
+	}
+
+	private static void setLightEnable(boolean enable){
+		int state = enable ? 14 : 15;
+		Log.i(ConfigUtil.TAG_LIGHT,"setLightEnable state="+state);
+		IO.cmd(state);
+	}
+
+	private boolean isLightEnable(Context context){
+		  String auto_lighte=Utils.getProperty(context, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
+		  boolean enable = (!"0".equals(auto_lighte) && !flagDay);
+		  Log.i(ConfigUtil.TAG_LIGHT,"isLightEnable enable="+enable);
+		  return enable;
+	}
+
+	private void DayNightModeInit(){
+		flagDay = false;
+		DayNightModeSet(true,2);
+	}
+
+	private static void DayNightModeSet(boolean isDay, int configExp){
+		Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet isDay="+isDay);
+		if(isDay == flagDay){
+			Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet skip by same mode");
+			return;
+		}
+		flagDay = isDay;
+		if(isDay){
+			setLightEnable(false);
+			setDev(2);
+		}else{
+			if(!ConfigUtil.FEATURE_DISABLE_TAKEPIC_ON_NIGHT){
+				setLightEnable(true);
+			}else{
+				Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet night but take picture disabled");
+			}
+			setDev(configExp);
+		}
+	}
+
+	private static void DayNightModeCheck(Context context, int isoValue, int configExp, int realExp){
+		boolean isDay = true;
+		
+		if(configExp != 2 && configExp < realExp){
+			Log.i(ConfigUtil.TAG_LIGHT,"Night mode by configExp != 2 && configExp< realExp");
+			isDay = false;
+		}else if(configExp == 2){
+			isDay = flagDay;
+		}else if(isoValue <= 200){
+			if(configExp < realExp){
+				Log.i(ConfigUtil.TAG_LIGHT,"Night mode by iso_value <= 200 && configExp < realExp");
+				isDay = false;
+			}else{
+				Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value <= 200 && configExp>=realExp");
+				isDay = true;
+			}
+		}else{
+			Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value > 200");//+ by hcj
+			isDay = true;
+		}
+		DayNightModeSet(isDay,configExp);
+	}
+  	//+ by hcj @}
 }

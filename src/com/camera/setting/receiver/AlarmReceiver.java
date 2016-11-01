@@ -17,6 +17,7 @@ import android.content.Intent;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
+import com.cj.ConfigUtil;//+ by hcj
 
 public class AlarmReceiver extends BroadcastReceiver {
 	private static final String TAG = AlarmReceiver.class.getSimpleName();
@@ -72,10 +73,15 @@ public class AlarmReceiver extends BroadcastReceiver {
 	public void getFlagWork(){
 		if(compareToTimeArr(mContext)){
 			System.out.println("guo----------getFlagWork1");
-			takepictureSendBroadcast(this.mContext);
+			takepictureSendBroadcast(this.mContext,"getFlagWork");//m by hcj
 		}else{
 			System.out.println("guo----------getFlagWork2");
 			TakepictureTiem.startMin=BootBroadcastReceiver.getcurrMin();
+			//+ by hcj @{
+			if(ConfigUtil.DBG_TIMER){
+				//TakepictureTiem.startMin=0;
+			}
+			//+ by hcj @}
 			BootBroadcastReceiver.setTiemTriggerModel(mContext);
 		}
 	}
@@ -165,7 +171,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 				}else{
 					t.setAlarmTime(Utils.DEIVCE_ALARM_START_1_ACTION,Integer.parseInt(arr[2]),1);
 				}
-				takepictureSendBroadcast(context);
+				takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_1_ACTION);//m by hcj
 			}
 		}else if (intent.getAction().equals(Utils.DEIVCE_ALARM_START_2_ACTION)) {
 			System.out.println("AlarmReciver="+Utils.DEIVCE_ALARM_START_2_ACTION);
@@ -183,7 +189,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 				}else{
 					t.setAlarmTime(Utils.DEIVCE_ALARM_START_2_ACTION,Integer.parseInt(arr[2]),2);
 				}
-					takepictureSendBroadcast(context);
+					takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_2_ACTION);//m by hcj
 			}
 		} else if (intent.getAction().equals(Utils.DEIVCE_ALARM_START_3_ACTION)) {
 			System.out.println("AlarmReciver="+Utils.DEIVCE_ALARM_START_3_ACTION);
@@ -202,7 +208,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 				}else{
 					t.setAlarmTime(Utils.DEIVCE_ALARM_START_3_ACTION,Integer.parseInt(arr[2]),3);
 				}
-					takepictureSendBroadcast(context);
+					takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_3_ACTION);//m by hcj
 			}
 			
 		}else if (intent.getAction().equals(Utils.DEIVCE_ALARM_START_4_ACTION)) {
@@ -216,13 +222,14 @@ public class AlarmReceiver extends BroadcastReceiver {
 				int minute=BootBroadcastReceiver.getcurrMin();
 				if(minute==0 && BootBroadcastReceiver.getcurrHour()==Integer.parseInt(arr[1]))
 				{	
+					//next time period
 					arr=Utils.getTiem(Utils.getProperty(context, Utils.KEY_FTP_TIEM5));
 					t.setAlarmTime(Utils.DEIVCE_ALARM_START_5_ACTION,Integer.parseInt(arr[2]),5);
 					//t.startTakepictureTiem(Utils.DEIVCE_ALARM_START_5_ACTION, Integer.parseInt(arr[0]),Integer.parseInt(arr[1]), Integer.parseInt(arr[2]), t.sender1, 5);
 				}else{
 				t.setAlarmTime(Utils.DEIVCE_ALARM_START_4_ACTION,Integer.parseInt(arr[2]),4);
 				}
-					takepictureSendBroadcast(context);
+					takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_4_ACTION);//m by hcj
 			}
 			
 		}else if (intent.getAction().equals(Utils.DEIVCE_ALARM_START_5_ACTION)) {
@@ -242,7 +249,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 				}else{
 				t.setAlarmTime(Utils.DEIVCE_ALARM_START_5_ACTION,Integer.parseInt(arr[2]),5);
 				}
-					takepictureSendBroadcast(context);
+					takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_5_ACTION);//m by hcj
 			}
 			
 		}else if (intent.getAction().equals(Utils.DEIVCE_ALARM_START_6_ACTION)) {
@@ -263,7 +270,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 				    t.setAlarmTime(Utils.DEIVCE_ALARM_START_6_ACTION,Integer.parseInt(arr[2]),6);
 				}
 				int type=6;
-					takepictureSendBroadcast(context);
+					takepictureSendBroadcast(context,Utils.DEIVCE_ALARM_START_6_ACTION);//m by hcj
 			}
 			
 		}
@@ -334,12 +341,13 @@ public class AlarmReceiver extends BroadcastReceiver {
     }
      
 	
-	private void takepictureSendBroadcast(Context context) {
+	private void takepictureSendBroadcast(Context context,String takeAction) {
 		System.err.println("guo time takepictureSendBroadcast ");
 		Intent intent = new Intent();
 		String takingModel = Utils.getProperty(context,Utils.KEY_FTP_TAKINGMODEL);
 		String fileSize = Utils.getProperty(context,Utils.KEY_FTP_FILESIZE);
 		intent.setAction(Utils.CAMERA_TAKEPICTURE_ACTION);
+		intent.putExtra("takepic_action",takeAction);//+ by hcj
 		intent.setPackage("com.camera.setting");
 		intent.putExtra(Utils.INTENT_TAKINGMODEL, Integer.parseInt(takingModel));
 		intent.putExtra(Utils.INTENT_FILESIZE,  Integer.parseInt(fileSize));
