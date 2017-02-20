@@ -1,5 +1,6 @@
 package com.cj;
 
+import com.camera.setting.ftp.FTP.DeleteFileProgressListener;
 import com.camera.setting.servics.BootCameraService;
 import com.camera.setting.utils.Utils;
 
@@ -32,7 +33,7 @@ public class CjReceiver extends BroadcastReceiver{
 		}
 	}
 
-	private void appHotReboot(Context context){
+	private void appHotReboot(final Context context){
 		Log.i(ConfigUtil.TAG_UPGRADE, "appHotReboot");
 		/*not work for system->data, only work for data->data
 		Intent intent = new Intent();
@@ -45,7 +46,13 @@ public class CjReceiver extends BroadcastReceiver{
 		//context.startService(intent);
 		android.os.Process.killProcess(android.os.Process.myPid());
 		*/
-		PowerManager powerManager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
-		powerManager.reboot("reboot");
+		VarCommon var = VarCommon.getInstance();
+		var.deleteRequest("updata",new DeleteFileProgressListener(){
+			@Override
+			public void onDeleteProgress(String currentStep){
+				PowerManager powerManager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
+				powerManager.reboot("reboot");
+			}
+		});
 	}
 }

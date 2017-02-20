@@ -169,5 +169,13 @@ public class CameraStateItem implements Serializable {
 	public void setTiem6(String tiem6) {
 		this.tiem6 = tiem6;
 	}
-
+//+ by hcj @{
+	public boolean isValid(){
+		if(getFtpUrl() == null || getFtpUser() == null || getFtpPassword() == null
+			|| getTiem6() == null){
+			return false;
+		}
+		return true;
+	}
+//+ by hcj @}
 }

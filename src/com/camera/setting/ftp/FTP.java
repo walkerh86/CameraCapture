@@ -15,6 +15,8 @@ import com.camera.setting.utils.Utils;
 import android.content.Context;
 import android.util.Log;
 
+import com.cj.ConfigUtil;//+ by hcj
+
 public class FTP {
 	public static final String TAG = "FTP";
 	/**
@@ -49,7 +51,7 @@ public class FTP {
 //		Log.i(TAG, "--host:"+hostName + " userName:"+ userName+" password:"+password);
 		this.serverPort = 21;
 		this.ftpClient = new FTPClient();
-		
+		Log.i(ConfigUtil.TAG,"FTP host="+hostName);//+ by hcj
 	}
 
 	// -------------------------------------------------------文件上传方法------------------------------------------------
@@ -97,19 +99,22 @@ public class FTP {
 				listener.onUploadProgress(Utils.FTP_UPLOAD_FAIL, 0L, file);
 			}
 		} catch (FileNotFoundException e) {
-			e.printStackTrace();
+			//e.printStackTrace();
+			Log.e(TAG, "uploadingSingle e="+e);
 			isSuccess = false;
 			listener.onUploadProgress(Utils.FTP_UPLOAD_FAIL, 0L, file);
-		} catch (IOException e) {
-			e.printStackTrace();
+		} catch (/*IO*/Exception e) {
+			//e.printStackTrace();
+			Log.e(TAG, "uploadingSingle e="+e);
 			isSuccess = false;
 			listener.onUploadProgress(Utils.FTP_UPLOAD_FAIL, 0L, file);
 		}
 		// 上传完成之后关闭连接
 		try {
 			uploadAfterOperate(listener);
-		} catch (IOException e) {
-			e.printStackTrace();
+		} catch (/*IO*/Exception e) {
+			//e.printStackTrace();
+			Log.e(TAG, "uploadAfterOperate e="+e);
 		}
 		 return isSuccess;
 	}
@@ -160,12 +165,12 @@ public class FTP {
 			if(listener!=null)
 				listener.onUploadProgress(Utils.FTP_CONNECT_SUCCESSS, 0,
 						null);
-		} catch (IOException e1) {
-			Log.e(TAG, "uploadBeforeOperate error",e1);
+		} catch (/*IO*/Exception e) {
+			Log.e(TAG, "uploadBeforeOperate e="+e);
 			if(listener!=null)
 				listener.onUploadProgress(Utils.FTP_CONNECT_FAIL, 0, null);
 			return;
-		}
+		} 
 
 		// 设置模式
 		ftpClient.setFileTransferMode(org.apache.commons.net.ftp.FTP.STREAM_TRANSFER_MODE);
@@ -220,10 +225,10 @@ public class FTP {
 			this.openConnect();
 			listener.onDownLoadProgress(Utils.FTP_CONNECT_SUCCESSS, 0, null);
 			Log.i(TAG, "downloadSingleFile openConnect");
-		} catch (IOException e1) {
-			e1.printStackTrace();
+		} catch (/*IO*/Exception e1) {
+			//e1.printStackTrace();
+			Log.e(TAG, "downloadSingleFile e="+e1);
 			listener.onDownLoadProgress(Utils.FTP_CONNECT_FAIL, 0, null);
-			Log.i(TAG, "downloadSingleFile Utils.FTP_CONNECT_FAIL");
 			return;
 		}
 		
@@ -312,8 +317,9 @@ public class FTP {
 			this.openConnect();
 			listener.onDownLoadProgress(Utils.FTP_CONNECT_SUCCESSS, 0, null);
 			Log.i(TAG, "downloadSingleFile openConnect");
-		} catch (IOException e1) {
-			e1.printStackTrace();
+		} catch (/*IO*/Exception e1) {
+			//e1.printStackTrace();
+			Log.e(TAG, "downloadSingleFile1 e="+e1);
 			listener.onDownLoadProgress(Utils.FTP_CONNECT_FAIL, 0, null);
 			Log.i(TAG, "downloadSingleFile Utils.FTP_CONNECT_FAIL");
 			return;
@@ -429,6 +435,45 @@ public class FTP {
 	}
 
 	// -------------------------------------------------------打开关闭连接------------------------------------------------
+	public void deleteUpgradeFiles(String serverPath, DeleteFileProgressListener listener) {
+		try {
+			Log.i(TAG, "deleteUpgradeFiles openConnect");
+			this.openConnect();
+			
+			FTPFile[] files = ftpClient.listFiles(serverPath);
+			if (files.length == 0) {
+				Log.d(TAG, "deleteUpgradeFiles no upgrade files");
+				listener.onDeleteProgress(Utils.FTP_FILE_NOTEXISTS);
+				return;
+			}
+			
+			//进行删除操作
+			for(FTPFile file : files){
+				String name = file.getName();
+				Log.d(TAG, "deleteUpgradeFiles name="+name);
+				if(name.startsWith(ConfigUtil.BIN_PREFIX) && name.endsWith(ConfigUtil.BIN_SUFFIX)){
+					ftpClient.deleteFile(serverPath+"/"+name);
+				}
+			}
+			/*
+			boolean flag = true;
+			flag = ftpClient.deleteFile(serverPath);
+			if (flag) {
+				listener.onDeleteProgress(Utils.FTP_DELETEFILE_SUCCESS);
+			} else {
+				listener.onDeleteProgress(Utils.FTP_DELETEFILE_FAIL);
+			}*/
+			
+			// 删除完成之后关闭连接
+			this.closeConnect();
+			listener.onDeleteProgress(Utils.FTP_DELETEFILE_SUCCESS);
+		} catch (/*IO*/Exception e1) {
+			//e1.printStackTrace();
+			Log.d(TAG, "deleteUpgradeFiles e="+e1);
+			listener.onDeleteProgress(Utils.FTP_DELETEFILE_FAIL);
+			return;
+		}
+	}
 
 	
 	/**
@@ -440,10 +485,10 @@ public class FTP {
 		// 中文转码
 		ftpClient.setControlEncoding("UTF-8");
 		// 连接至服务器
-//		ftpClient.setDefaultTimeout(30000);
-//		ftpClient.setConnectTimeout(30000);
-//		ftpClient.setDataTimeout(30000);
-//		ftpClient.setSoTimeout(30000);
+		ftpClient.setDefaultTimeout(ConfigUtil.SRV_CONNECT_TIMEOUT);
+		ftpClient.setConnectTimeout(ConfigUtil.SRV_CONNECT_TIMEOUT);//open by hcj
+		//ftpClient.setDataTimeout(ConfigUtil.SRV_CONNECT_TIMEOUT);
+		//ftpClient.setSoTimeout(ConfigUtil.SRV_CONNECT_TIMEOUT);
 		
 		ftpClient.connect(hostName, serverPort);
 		// 获取响应值

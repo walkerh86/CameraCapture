@@ -9,21 +9,21 @@ public class Utils {
 	private static final String TAG = Utils.class.getSimpleName();
 	public static final String XML_INFO = "xml_info";
 	
-	public static final String FTP_CONNECT_SUCCESSS = "ftp连接成功";
-	public static final String FTP_CONNECT_FAIL = "ftp连接失败";
-	public static final String FTP_DISCONNECT_SUCCESS = "ftp断开连接";
-	public static final String FTP_FILE_NOTEXISTS = "ftp上文件不存在";
+	public static final String FTP_CONNECT_SUCCESSS = "ftp connect success";
+	public static final String FTP_CONNECT_FAIL = "ftp connect fail";
+	public static final String FTP_DISCONNECT_SUCCESS = "ftp disconnect success";
+	public static final String FTP_FILE_NOTEXISTS = "ftp file not exists";
 	
-	public static final String FTP_UPLOAD_SUCCESS = "ftp文件上传成功";
-	public static final String FTP_UPLOAD_FAIL = "ftp文件上传失败";
-	public static final String FTP_UPLOAD_LOADING = "ftp文件正在上传";
+	public static final String FTP_UPLOAD_SUCCESS = "ftp upload success";
+	public static final String FTP_UPLOAD_FAIL = "ftp upload fail";
+	public static final String FTP_UPLOAD_LOADING = "ftp upload loading";
 
-	public static final String FTP_DOWN_LOADING = "ftp文件正在下载";
-	public static final String FTP_DOWN_SUCCESS = "ftp文件下载成功";
-	public static final String FTP_DOWN_FAIL = "ftp文件下载失败";
+	public static final String FTP_DOWN_LOADING = "ftp down loading";
+	public static final String FTP_DOWN_SUCCESS = "ftp down success";
+	public static final String FTP_DOWN_FAIL = "ftp down fail";
 	
-	public static final String FTP_DELETEFILE_SUCCESS = "ftp文件删除成功";
-	public static final String FTP_DELETEFILE_FAIL = "ftp文件删除失败";
+	public static final String FTP_DELETEFILE_SUCCESS = "ftp delete success";
+	public static final String FTP_DELETEFILE_FAIL = "ftp delete fail";
 	
 	public static final String KEY_SYS_INIT = "key_sys_init";//是否第一次安装程序
 	public static final String KEY_FTP_VERSION="key_ftp_version";

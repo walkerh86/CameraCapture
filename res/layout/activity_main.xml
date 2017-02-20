@@ -27,7 +27,6 @@
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:onClick="onPending"
         android:text="测试定时" />
 
 </LinearLayout>

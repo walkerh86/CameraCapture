@@ -29,6 +29,7 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.camera.setting.ftp.FTP;
+import com.camera.setting.ftp.FTP.DeleteFileProgressListener;
 import com.camera.setting.ftp.FTP.DownLoadProgressListener;
 import com.camera.setting.ftp.FTP.UploadProgressListener;
 import com.camera.setting.receiver.BootBroadcastReceiver;
@@ -37,6 +38,13 @@ import com.camera.setting.utils.Utils;
 //+ by hcj @{
 import com.cj.NetworkUtils;
 import com.cj.ConfigUtil;
+import com.cj.MiscUtils;
+import com.cj.FileUtils;
+import com.cj.LogManager;
+import com.cj.VarCommon;
+import com.cj.StateRetManager;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 //+ by hcj @}
 
 public class UploadService extends Service{
@@ -56,7 +64,7 @@ public class UploadService extends Service{
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		Log.i(TAG, "--onCreate");
+		Log.i(ConfigUtil.TAG, "UploadService onCreate");
 		if(isCreateFloat){
 			ftpClient = new FTP(UploadService.this);
     		isCreateFloat = false;
@@ -69,8 +77,26 @@ public class UploadService extends Service{
 			myFilter.addAction("com.gs.camera");
 			myFilter.addAction("com.gs.updateftpXml");
 			myFilter.addAction("android.intent.action.updatexml");
+			//myFilter.addAction("com.cj.state_changed");
 			this.registerReceiver(myBroadCast, myFilter);
 		}
+
+		//initUploadMode();
+		StateRetManager retManager = StateRetManager.getInstance(this);
+		//VarCommon var = VarCommon.getInstance();
+		//var.setExecutor(uploadExecutor);
+		mVarCommon.setOnUploadRequestListener(new VarCommon.OnUploadRequestListener(){
+			@Override
+			public void onUploadRequest(String localPath, String remoteDir, UploadProgressListener uploadListener){
+				Log.i(ConfigUtil.TAG,"onUploadRequest localPath="+localPath+",remoteDir="+remoteDir);
+				uploadExecutor.execute(new UploadRunnable(localPath,remoteDir,uploadListener));
+			}
+
+			@Override
+			public void onDeleteRequest(String remoteDir, DeleteFileProgressListener deleteListener){
+				uploadExecutor.execute(new DeleteRunnable(remoteDir,deleteListener));
+			}
+		});
 	}
 
 	/* 创建广播接收�?*/
@@ -83,7 +109,8 @@ public class UploadService extends Service{
 			/*
 			 * 如果捕捉到的action是ACTION_BATTERY_CHANGED�?就运行onBatteryInfoReceiver()
 			 */
-			System.out.println("this action++++++++++++++++" + action);
+			//System.out.println("this action++++++++++++++++" + action);
+			Log.i(ConfigUtil.TAG,"UploadService onReceive action="+action);
 			telephonyManager = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
 			//boolean enabled = telephonyManager.getDataEnabled();//- by hcj
 			boolean enabled = NetworkUtils.getDataEnabled(telephonyManager);//+ by hcj
@@ -99,13 +126,15 @@ public class UploadService extends Service{
 					//telephonyManager.setDataEnabled(true);//- by hcj
 					NetworkUtils.setDataEnabled(telephonyManager);//+ by hcj
 					Log.i(TAG, "--start sleep for open network");
+					/*
 					try {
 						Thread.sleep(1000);
 					} catch (InterruptedException e) {
 						Log.e(TAG, "sleep 10s failed" ,e);
 					} 
+					*/
+					MiscUtils.threadSleep(1000);
 				}
-				
 				new Thread(){
 					public void run() {
 						startUpload(deivcesId,uploadXml,imgname,imgpath);
@@ -114,6 +143,8 @@ public class UploadService extends Service{
 				if(!"state.xml".equals(imgname))
 				upLoadOther();
 				Log.i(TAG,action+"/upLoadOther\n");
+				//Log.i(ConfigUtil.TAG,"CAMERA_UPLOAD_SERVICE_ACTION mUploadQueue + "+Utils.XML_PATH);
+				//mUploadQueue.add(Utils.XML_PATH);
 			}
 			else if(null !=intent && intent.getAction().equals(Utils.CAMERA_UPLOAD_FILE_SERVICE_ACTION)){
 				if(!enabled){
@@ -121,32 +152,46 @@ public class UploadService extends Service{
 					//telephonyManager.setDataEnabled(true);//- by hcj
 					NetworkUtils.setDataEnabled(telephonyManager);//+ by hcj
 					Log.i(TAG, "--start sleep for open network");
+					/*
 					try {
 						Thread.sleep(1000);
 					} catch (InterruptedException e) {
 						Log.e(TAG, "sleep 10s failed" ,e);
 					} 
+					*/
+					MiscUtils.threadSleep(1000);
 				}
 				startFileUpload(deivcesId);
 				Log.i(TAG,action+"/startFileUpload\n");
 			}else if("com.gs.camera".equals(intent.getAction())){
-
-				new Thread(){
-					public void run() {
-						try {
-							Thread.sleep(1000);
-						} catch (InterruptedException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
+				//upload after take picture
+				final String imgPath = (intent.hasExtra("imgPath")) ? intent.getStringExtra("imgPath") : null;
+				//new Thread(){
+					//public void run() {
+						Log.i(ConfigUtil.TAG,"com.gs.camera imgPath="+imgPath+",mUploadMode="+mVarCommon.getUploadMode());
+						if(mVarCommon.getUploadMode() == ConfigUtil.UPLOAD_MODE_SAVE || imgPath == null){
+							//MiscUtils.threadSleep(1000);
+							getmTimer();
+							upLoadOther();
+						}else{
+							uploadImage(imgPath,null);
 						}
-						getmTimer();
-						upLoadOther();
-					};
-				}.start();
+					//};
+				//}.start();
 				Log.i(TAG,action+"/upLoadOther\n");
-				
+				/*
+				if(intent.hasExtra("imgPath")){
+					String imgPath = intent.getStringExtra("imgPath");
+					Log.i(ConfigUtil.TAG,"com.gs.camera mUploadQueue + "+imgPath);
+					mUploadQueue.add(imgPath);
+				}else{
+					Log.i(ConfigUtil.TAG,"com.gs.camera without imgPath");
+				}
+				if(mUploadMode == ConfigUtil.UPLOAD_MODE_SAVE){
+					upLoadOther();
+				}
+				*/
 			}else if("com.gs.updateftpXml".equals(intent.getAction())){
-								
 				new Thread(){
 					public void run() {
 						ftpClient = new FTP(UploadService.this);
@@ -154,10 +199,21 @@ public class UploadService extends Service{
 					};
 				}.start();
 				Log.i(TAG,action+"/startUpload\n");
+				/*
+				ftpClient = new FTP(UploadService.this);//incase ftp url changed
+				Log.i(ConfigUtil.TAG,"com.gs.updateftpXml mUploadQueue + "+Utils.XML_PATH);
+				mUploadQueue.add(Utils.XML_PATH);
+				*/
 			}
 			else if("android.intent.action.updatexml".equals(action)){
 				Log.i(TAG,action+"\n");
 			}
+		//+ by hcj @{	
+			else if("com.cj.state_changed".equals(action)){
+				//Log.i(ConfigUtil.TAG, "com.cj.state_changed initUploadMode");
+				//initUploadMode();
+			}
+		//+ by hcj @}	
 		}
 	};
 	
@@ -184,11 +240,14 @@ public class UploadService extends Service{
 				//telephonyManager.setDataEnabled(true);//- by hcj
 				NetworkUtils.setDataEnabled(telephonyManager);//+ by hcj
 				Log.i(TAG, "--start sleep for open network");
+				/*
 				try {
 					Thread.sleep(1000);
 				} catch (InterruptedException e) {
 					Log.e(TAG, "sleep 10s failed" ,e);
 				} 
+				*/
+				MiscUtils.threadSleep(1000);
 			}
 			new Thread(){
 				public void run() {
@@ -197,6 +256,8 @@ public class UploadService extends Service{
 			}.start();
 			if(!"state.xml".equals(imgname))
 			upLoadOther();
+			//Log.i(ConfigUtil.TAG,"CAMERA_UPLOAD_SERVICE_ACTION mUploadQueue + "+Utils.XML_PATH);
+			//mUploadQueue.add(Utils.XML_PATH);
 		}
 		if(null !=intent && intent.getAction().equals(Utils.CAMERA_UPLOAD_FILE_SERVICE_ACTION)){
 			if(!enabled){
@@ -204,14 +265,23 @@ public class UploadService extends Service{
 				//telephonyManager.setDataEnabled(true);//- by hcj
 				NetworkUtils.setDataEnabled(telephonyManager);//+ by hcj
 				Log.i(TAG, "--start sleep for open network");
+				/*
 				try {
 					Thread.sleep(1000);
 				} catch (InterruptedException e) {
 					Log.e(TAG, "sleep 10s failed" ,e);
 				} 
+				*/
+				MiscUtils.threadSleep(1000);
 			}
 			startFileUpload(deivcesId);
 		}
+//+ by hcj @{
+		if(null !=intent && intent.getAction().equals("com.cj.init_upload")){
+			Log.i(ConfigUtil.TAG,"com.cj.init_upload");
+			uploadImage(null,Utils.IMG_PATH);
+		}
+//+ by hcj @}		
 		return super.onStartCommand(intent, flags, startId);
 	}
 	private void startUpload(final String deviceID,final boolean uploadXml,final String name,final String path) {
@@ -251,7 +321,6 @@ public class UploadService extends Service{
 	private void startUploadList(final String filePath,final String fileName) {
 		final String deviceID=SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
 		Log.i(TAG, "---startUpload deviceID: "+deviceID);
-
 		uploadExecutor.execute(new Runnable() {
 			
 			@Override
@@ -271,7 +340,8 @@ public class UploadService extends Service{
 								Utils.deleteFile(new File(filePath));
 							} 								
 						}catch(Exception e){
-							e.printStackTrace();
+							//e.printStackTrace();
+							LogManager.getInstance().Log("startUploadList e="+e);
 							Utils.deleteFile(new File(filePath));
 						}
 					}
@@ -280,6 +350,7 @@ public class UploadService extends Service{
 		});
 		
 	}
+	
 	long lastClickTime=0;
 	public synchronized  boolean isFastClick() {
         long time = System.currentTimeMillis();   
@@ -310,6 +381,7 @@ public class UploadService extends Service{
 		}, ms, ms);
 	}
 	public void upLoadOther(){
+		Log.i(ConfigUtil.TAG,"upLoadOther thread="+Thread.currentThread().getId());
 		if (isFastClick()) {return;}
 		final List<String> list=getPictures(Utils.IMG_PATH);
 		int m = 0;
@@ -319,6 +391,11 @@ public class UploadService extends Service{
 			Log.i(TAG,"upLoadOther\n");
 			if(!name.equals(imgName)){
 				startUploadList(list.get(i),name);
+				//+ by hcj @{
+				//String imgPath = list.get(i);
+				//Log.i(ConfigUtil.TAG,"upLoadOther mUploadQueue + "+imgPath);
+				//mUploadQueue.add(imgPath);
+				//+ by hcj @}
 
 				m++;
 				if(m >= 10){
@@ -358,6 +435,8 @@ public class UploadService extends Service{
 	   return list; 
 	 }
 	private void startFileUpload(final String deviceID) {
+		Log.i(ConfigUtil.TAG,"startFileUpload");
+		//upLoadOther();
 		uploadFileExecutor.execute(new Runnable() {
 			@Override
 			public void run() {
@@ -366,7 +445,7 @@ public class UploadService extends Service{
 					ftpClient = new FTP(UploadService.this);
 				} 
 				boolean mkdir = ftpClient.mkdir(deviceID);
-				Log.i(TAG, "--mkdir "+ deviceID + " :"+ mkdir);
+				Log.i(ConfigUtil.TAG, "--mkdir "+ deviceID + " :"+ mkdir);
 				File file =new File(Utils.IMG_PATH);
 				ArrayList<File> deleteFile = new ArrayList<File>();
 		    	File []files = file.listFiles();
@@ -375,9 +454,10 @@ public class UploadService extends Service{
 		    		for (int i = 0; i < files.length; i++) {
 		    			File child = files[i];
 		    			try {
+							Log.i(ConfigUtil.TAG, "--uploadingSingle:"+child.getName());
 							ftpClient.uploadingSingle(child,deviceID+"/", null);
 							deleteFile.add(child);
-							Log.i(TAG, "--uploadingSingle:"+child.getName());
+							//Log.i(ConfigUtil.TAG, "--uploadingSingle:"+child.getName());
 						} catch (IOException e) {
 							e.printStackTrace();
 						}
@@ -389,7 +469,7 @@ public class UploadService extends Service{
 		    	try {
 					ftpClient.uploadAfterOperate(new UploadProgressListener() {
 						public void onUploadProgress(String currentStep, long uploadSize, File file) {
-							Log.i(TAG, "--onUploadProgress:"+currentStep);
+							Log.i(ConfigUtil.TAG, "--onUploadProgress:"+currentStep);
 						}
 					});
 				} catch (IOException e) {
@@ -414,5 +494,206 @@ public class UploadService extends Service{
 	public void setImgPaht(String imgPaht) {
 		this.imgPaht = imgPaht;
 	}
+
+//+ by hcj @{
+	private boolean mUploadImgSuccess;
+	private void uploadImage(final String filePath, final String fileDir) {
+		Log.i(ConfigUtil.TAG, "---uploadImage");
+		uploadExecutor.execute(new Runnable() {
+			@Override
+			public void run() {
+				Log.i(ConfigUtil.TAG, "---uploadImage run");
+				mVarCommon.setImgUploading(true);
+
+				if(filePath != null){
+					uploadSingleImage(filePath);
+				}
+				if(fileDir != null){
+					final List<String> imgList=getPictures(Utils.IMG_PATH);
+					if(imgList != null){
+						for(int i=0;i<imgList.size();i++){
+							if(imgList.get(i).equals(filePath)){
+								continue;
+							}
+							uploadSingleImage(imgList.get(i));
+						}
+					}
+				}
+				
+				mVarCommon.setImgUploading(false);
+				notifyImgUploadDone();
+			}
+		});
+		
+	}
+
+	private void uploadSingleImage(String filePath){
+		Log.i(ConfigUtil.TAG, "---uploadSingleImage filePath="+filePath);
+		final String deviceID=SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
+		
+		int retryCount = 2;
+		mUploadImgSuccess = false;
+		String fileName = FileUtils.getFileName(filePath);
+		
+		if (ftpClient == null) {
+			ftpClient = new FTP(UploadService.this);
+		} 
+		do{
+			boolean mkdir = ftpClient.mkdir(deviceID);
+			Log.i(ConfigUtil.TAG, "uploadSingleImage mkdir="+ mkdir +",filePath"+filePath);
+			if(mkdir){
+				ftpClient.uploadingSingle(deviceID+"/"+fileName,filePath, new UploadProgressListener() {
+					@Override
+					public void onUploadProgress(String currentStep,long downProcess,File file) {
+						try{
+							Log.i(ConfigUtil.TAG, "--"+ currentStep);
+							if(currentStep.equals(Utils.FTP_UPLOAD_SUCCESS)){
+								//Utils.deleteFile(new File(filePath));
+								mUploadImgSuccess = true;
+							} 								
+						}catch(Exception e){
+							//e.printStackTrace();
+							//Utils.deleteFile(new File(filePath));
+							Log.i(ConfigUtil.TAG, "uploadSingleImage uploadingSingle e="+ e);
+							LogManager.getInstance().Log("uploadSingleImage e="+ e);
+						}
+					}
+				});
+			}
+			if(mUploadImgSuccess){
+				new File(filePath).delete();
+				Log.i(ConfigUtil.TAG, "---uploadSingleImage success & delete file");
+				break;
+			}
+			if(mVarCommon.getUploadMode() == ConfigUtil.UPLOAD_MODE_REALTIME){
+				retryCount--;
+				Log.i(ConfigUtil.TAG, "---uploadSingleImage fail retryCount="+retryCount);
+				if(retryCount == 0){
+					Log.i(ConfigUtil.TAG, "---uploadSingleImage fail twice & delete file");
+					new File(filePath).delete();
+					break;
+				}
+			}
+			if(mVarCommon.getUploadMode() == ConfigUtil.UPLOAD_MODE_SAVE){
+				Log.i(ConfigUtil.TAG, "---uploadSingleImage interupt by uploadMode change to save");
+				break;
+			}
+			MiscUtils.threadSleep(2000);
+		}while(true);
+	}
+
+/*
+	private int mUploadMode;
+	private String mUploadLastMode;
+	private void initUploadMode(){
+		//String triggerMode = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
+		String brightness = Utils.getProperty(this,Utils.KEY_FTP_IMG_BRIGHTNESS);
+		int policy = ConfigUtil.UPLOAD_MODE_SAVE;
+		boolean clearOlds = false;
+		
+		if("1".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_SAVE;
+		}else if("2".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_REALTIME;
+		}else if("3".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_FULL;
+		}else if("4".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_SAVE;
+			clearOlds = true;
+		}else if("5".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_REALTIME;
+			clearOlds = true;
+		}else if("6".equals(brightness)){
+			policy = ConfigUtil.UPLOAD_MODE_FULL;
+			clearOlds = true;
+		}else{
+			Log.i(ConfigUtil.TAG,"initUploadMode policy invalide config compose: brightness="+brightness);
+		}
+		Log.i(ConfigUtil.TAG,"initUploadMode policy="+policy+",clearOlds="+clearOlds);
+		if(clearOlds){
+			if(!brightness.equals(mUploadLastMode)){
+				MiscUtils.deleteSubFiles(Utils.IMG_PATH);
+			}else{
+				Log.i(ConfigUtil.TAG,"initUploadMode skip clearOlds by same mode");
+			}
+		}
+		mUploadMode = policy;
+		mUploadLastMode = brightness;
+	}
+*/
+	private void notifyImgUploadDone(){
+		sendBroadcast(new Intent("com.cj.img_upload.done"));
+	}
 	
+	private VarCommon mVarCommon = VarCommon.getInstance();
+
+	private class UploadRunnable implements Runnable{
+		private String mLocalPath;
+		private String mRemoteDir;
+		private UploadProgressListener mListener;
+		
+		public UploadRunnable(String localPath, String remoteDir, UploadProgressListener uploadListener){
+			mLocalPath = localPath;
+			mRemoteDir = remoteDir;
+			mListener = uploadListener;
+		}
+
+		@Override
+		public void run(){
+			Log.i(ConfigUtil.TAG, "UploadRunnable run mLocalPath="+mLocalPath);
+			
+			if (ftpClient == null) {
+				ftpClient = new FTP(UploadService.this);
+			} 
+
+			//mk root dir
+			String remotePath = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
+			
+			//mk sub dir
+			if(mRemoteDir != null && mRemoteDir.length() > 0){
+				remotePath += "/"+mRemoteDir;
+				boolean mkdir = ftpClient.mkdir(remotePath);
+				if(!mkdir){
+					Log.i(ConfigUtil.TAG, "UploadRunnable mkdir "+remotePath+" fail!!!");
+					return;
+				}
+			}
+			String fileName = FileUtils.getFileName(mLocalPath);
+			remotePath += "/"+fileName;
+			Log.i(ConfigUtil.TAG, "UploadRunnable remotePath="+remotePath);
+			
+			ftpClient.uploadingSingle(remotePath, mLocalPath, mListener);
+			Log.i(ConfigUtil.TAG, "UploadRunnable done");
+		}
+	}
+
+	private class DeleteRunnable implements Runnable{
+		private String mRemoteDir;
+		private DeleteFileProgressListener mListener;
+		
+		public DeleteRunnable(String remoteDir, DeleteFileProgressListener uploadListener){
+			mRemoteDir = remoteDir;
+			mListener = uploadListener;
+		}
+
+		@Override
+		public void run(){
+			Log.i(ConfigUtil.TAG, "DeleteRunnable run mRemoteDir="+mRemoteDir);
+			
+			if (ftpClient == null) {
+				ftpClient = new FTP(UploadService.this);
+			} 
+
+			//mk root dir
+			String remotePath = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
+			
+			//mk sub dir
+			remotePath += mRemoteDir;
+			Log.i(ConfigUtil.TAG, "DeleteRunnable remotePath="+remotePath);
+			
+			ftpClient.deleteUpgradeFiles(remotePath, mListener);
+			Log.i(ConfigUtil.TAG, "DeleteRunnable done");
+		}
+	}
+//+ by hcj @}
 }

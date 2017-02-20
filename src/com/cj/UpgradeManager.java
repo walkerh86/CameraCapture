@@ -45,21 +45,22 @@ public class UpgradeManager implements Runnable{
 	private static final int UPGRADE_RET_FAIL_MD5 = 1;
 	private static final int UPGRADE_RET_FAIL_INSTALL = 2;
 	private boolean mApkUpgradeChecked;
-	private static final String BIN_PREFIX = "CaptureCamera_";
 	private boolean mUpgradeRetSuccess;
 
 	@Override
 	public void run(){
 		while (true) {
+			if(VarCommon.getInstance().isCameraFullSleep()){
+				MiscUtils.threadSleep(ConfigUtil.UPGRADE_CHECK_PERIOD_MS);
+				continue;
+			}
 			if(!mApkUpgradeChecked){
 				mApkUpgradeChecked = true;
 				apkCheckUpgradeIsOk();
 			}
 			apkCheckUpgrade();
-			try {
-				Thread.sleep(1000*60*5);
-			} catch (InterruptedException e) {
-			}
+			//MiscUtils.threadSleep(ConfigUtil.UPGRADE_CHECK_PERIOD_MS);
+			break;
 		}
 	}
 	
@@ -136,7 +137,7 @@ public class UpgradeManager implements Runnable{
 			for(FTPFile file : files){
 				Log.i(ConfigUtil.TAG_UPGRADE,"update dir file:"+file.getName());
 				String name = file.getName();
-				if(name.startsWith(BIN_PREFIX) && name.endsWith(".bin")){
+				if(name.startsWith(ConfigUtil.BIN_PREFIX) && name.endsWith(ConfigUtil.BIN_SUFFIX)){
 					mUpgradeApkName = name;
 					break;
 				}
@@ -158,7 +159,7 @@ public class UpgradeManager implements Runnable{
 				}
 			}
 			*/
-			String nameNoPrefix = mUpgradeApkName.substring(BIN_PREFIX.length());
+			String nameNoPrefix = mUpgradeApkName.substring(ConfigUtil.BIN_PREFIX.length());
 			int seperatorIdx = nameNoPrefix.indexOf("_");
 			int md5BeginIdx = seperatorIdx+1;
 			int md5EndIdx = nameNoPrefix.lastIndexOf(".");
@@ -279,9 +280,9 @@ public class UpgradeManager implements Runnable{
 		Log.i(ConfigUtil.TAG_UPGRADE, "apkSetResult mainCode="+mainCode+",subCode="+subCode);
 		String retName = null;
 		if(mainCode == 0){
-			retName = BIN_PREFIX+verCode+".ret.ok";
+			retName = ConfigUtil.BIN_PREFIX+verCode+".ret.ok";
 		}else{
-			retName = BIN_PREFIX+verCode+".ret."+mainCode+"."+subCode;
+			retName = ConfigUtil.BIN_PREFIX+verCode+".ret."+mainCode+"."+subCode;
 		}
 		String localRetName = "//sdcard/Download/"+retName;
 		String remoteRetName = mDeviceId+"/updata/"+retName;
@@ -312,11 +313,7 @@ public class UpgradeManager implements Runnable{
 				if(mUpgradeRetSuccess){
 					break;
 				}else{
-					try {
-						Thread.sleep(2000);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
+					MiscUtils.threadSleep(2000);
 				}
 			}
 		} catch (IOException e) {

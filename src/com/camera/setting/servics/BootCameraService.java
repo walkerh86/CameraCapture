@@ -1,10 +1,16 @@
 package com.camera.setting.servics;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Random;
@@ -55,8 +61,19 @@ import android.view.WindowManager.LayoutParams;
 import android.widget.FrameLayout;
 //+ by hcj @{
 import com.cj.ConfigUtil;
+import com.cj.FileUtils;
+import com.cj.LogManager;
+import com.cj.ShellUtils;
+import com.cj.StateRetManager;
+import com.cj.MiscUtils;
 import com.cj.UpgradeManager;
+import com.cj.VarCommon;
 import java.util.TimeZone;
+import com.zg.IO1;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+
+import java.util.Calendar;
 //+ by hcj @}
 
 public class BootCameraService extends Service implements PreviewCallback,SurfaceHolder.Callback{
@@ -106,21 +123,32 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		Log.i(TAG, "--onCreate");
-		Log.i(ConfigUtil.TAG_UPGRADE, "BootCameraService onCreate");
+		//Log.i(TAG, "--onCreate");
+		//Log.i(ConfigUtil.TAG_UPGRADE, "BootCameraService onCreate");
 		if(isCreateFloat){
 			ftpClient = new FTP(BootCameraService.this);
-    		createFloatView();
-    		isCreateFloat = false;
-    	}
+    			createFloatView();
+    			isCreateFloat = false;
+    		}
 		Random random = new Random();
 		uploadSleep=random.nextInt(59);
-		//+ by hcj @{
+//+ by hcj @{
 		//修复定时拍照模式到达时间段界限后不再拍照问题
 		if(uploadSleep == 0){
 			uploadSleep=1;
-		}	
-		//+ by hcj @}
+		}
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"BootCameraService onCreate current time:"+sdf.format(new Date()));
+		DayNightModeInit();
+		cjSetCameraConfig(true);
+		if(BootBroadcastReceiver.getcurrYearfalg()){
+			mTimeSyncDone = true;
+			onTimeSyncDone();
+		}
+		new Thread(new UpgradeManager(BootCameraService.this)).start();
+		sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+
+		startBroadcastListener();
+//+ by hcj @}
 		fileSize = Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
 		System.out.println("fileseize------------------"+fileSize);
 		String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
@@ -131,13 +159,15 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		        	int fd=AlytJni.openSpiSrdy("/dev/input/event1");
 		            while (true) {
 		            	int key=AlytJni.readSpiSrdy(fd);
+				Log.i(ConfigUtil.TAG,"trigger key="+key);
+				if(67==key){
+					cjTriggerWork(TRIGGER_BY_KEY_TEST);
+					continue;
+				}
 		            	if(-1!=key && 88!=key && 68!=key){
-					if(ConfigUtil.FEATURE_DISABLE_TAKEPIC_ON_NIGHT && !flagDay){
-						Log.i(ConfigUtil.TAG,"skip take picture on night mode");
-						continue;
-					}
 		                  //  Message msg = new Message();
 		                   // handler.sendEmptyMessage(START_CAMERA);
+		                   /*- by hcj
 		            		int times=Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 		            		System.out.println(photonum+"guosong times"+times);
 		            		photonum+=times;
@@ -145,6 +175,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		            		System.out.println("------------key-------------------"+photonum);
 					Log.i(ConfigUtil.TAG_CONTINUES,"startWork by key trigger");
 		            		startWork();
+					*/
+					cjTriggerWork(TRIGGER_BY_KEY_CAMERA);
 		            	}
 		            }
 		        }
@@ -157,23 +189,30 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			        	int fd=AlytJni.openSpiSrdy("/dev/input/event1");
 			            while (true) {
 			            	int key=AlytJni.readSpiSrdy(fd);
+					Log.i(ConfigUtil.TAG,"timer test key="+key);
 			            	if(67==key){
 			                  //  Message msg = new Message();
 			                   // handler.sendEmptyMessage(START_CAMERA);
 			            		key68=true;
 			            		if(mCamera!=null){
+						/*- by hcj	
 			            		Parameters params = mCamera.getParameters();
 			            		Size size=params.getPreviewSize();
 			            		if(size.height!=240){
 			            			params.setPreviewSize(320, 240);
 			            		}
 			            		mCamera.setParameters(params);
+			            		*/
+			            		comSetPreviewSize(320, 240);//+ by hcj
 			            		}
+						/*- by hcj
 			            		photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 			            		Log.i(TAG, "photonum5="+String.valueOf(photonum));
 						Log.i(ConfigUtil.TAG_CONTINUES,"startWork by key 67");
 			            		startWork();
 			                    System.out.println("------------key--------67-----------"+photonum);
+			                    */
+			                    cjTriggerWork(TRIGGER_BY_KEY_TEST);//+ by hcj
 			            	}
 			            }
 			        }
@@ -181,53 +220,63 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			    nThread.start();
 			}
 		}
-//+ by hcj @{
-		new Thread(new UpgradeManager(BootCameraService.this)).start();
-		sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
-		DayNightModeInit();
-//+ by hcj @}
 	}
+
+/*	
 	public void startWork(){
 		//+ by hcj @{
 		Log.i(ConfigUtil.TAG_CONTINUES,"mCamera="+mCamera);
-		/*
 		if(mStartWork){
 			Log.i(ConfigUtil.TAG_CONTINUES,"startWork skip by key too fast!");
 			return;
 		}
-		mStartWork = true;*/
+		mStartWork = true;
 		//+ by hcj @}
 		
 		//System.out.println("guosong statwork flagseep"+flagSeelp);
 		//if (mTimer != null){
 		//	return;
 		//}
-		if(flagSeelp==0){
-		setSleepfalg(1);
+		
+		//if(flagSeelp==0){
+		//setSleepfalg(1);
+		//}
+		
+		if(isCameraStandby()){
+			setCameraIdle();
 		}
 		if(mCamera!=null){
-			/*IO.cmd(2);*/
+			//IO.cmd(2);
            // if(!flag){
-            try {
-				Thread.sleep(30);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
           //  }
             flag=true;
-		  //+ by hcj @{
+//+ by hcj @{
 		  if(isLightEnable(BootCameraService.this)){
-		  	setLight(LIGHT_ON);
+		  	if(setLight(LIGHT_ON)){
+				Log.i(ConfigUtil.TAG,"startWork app set light on, delay to work");
+				MiscUtils.threadSleep(ConfigUtil.WORK_AFTER_LIGHT_ON_DELAY_MS);//+ by hcj ,the picture would be black with out delay
+		  	}
 		  }
-		  //+ by hcj @}
-		Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa startWork time="+System.currentTimeMillis());  
+		  if(key68){
+		  	key68 = false;
+		  }else{
+		  	Size size = mCamera.getParameters().getPreviewSize();
+			fileSize=Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
+			String[] size1 = ImgSize.getImgSize(fileSize);
+			height = Integer.parseInt(size1[0]);
+		      width = Integer.parseInt(size1[1]);
+			comSetPreviewSize(width, height);
+		  }
+//+ by hcj @}
             mCamera.setOneShotPreviewCallback(BootCameraService.this);
-            
             getmTimer();
 		}else{
-			startCamera1();
+			//startCamera1();
+			cjStartCamera();
 		}
 	}
+*/
+	
 	@Override
 	public IBinder onBind(Intent arg0) {
 		Log.i(TAG, "--onBind");
@@ -238,6 +287,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		Log.i(TAG, "--onStartCommand");
 		flags = START_STICKY;
+		/*
 		if(intent!= null && intent.getAction().equals(Utils.CAMERA_START_ACTION)){
 			startBroadcastListener();
 		}
@@ -247,6 +297,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			startBroadcastListener();
 		}
 		//+ by hcj @}
+		*/
 		return super.onStartCommand(intent, flags, startId);
 	}
 	
@@ -259,7 +310,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	@Override
 	public void surfaceCreated(SurfaceHolder holder) {
 		Log.i(TAG, "--surfaceCreated holder+"+holder.isCreating());
-		startCamera(holder,false);
+		//startCamera(holder,false);
+		cjStartCamera(holder);//+ by hcj
 	}
 	
 
@@ -273,9 +325,10 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	public void onPreviewFrame(byte[] arg0, Camera camera) {
 		//System.out.println(photonum+"-------"+fileSize);
 		//+ by hcj @{
-		Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa onPreviewFrame time="+System.currentTimeMillis()); 
-		//mStartWork = false;
-		setLight(LIGHT_OFF);
+		//Log.i(ConfigUtil.TAG,"main thread="+Thread.currentThread().getId());
+		Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa onPreviewFrame totaltime="+(System.currentTimeMillis()-mStartTime)); 
+		mLogManager.Log("onPreviewFrame totaltime="+(System.currentTimeMillis()-mStartTime)+",photonum="+photonum);
+		//setLight(LIGHT_OFF);
 		//+ by hcj @}
 		//IO.cmd(3);//- by hcj
 		Log.i(TAG, "onPreviewFrame ?photonum");
@@ -286,14 +339,27 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			if(photonum==0){
 				Log.i(TAG, "onPreviewFrame photonum==0");
 				//IO.cmd(3);//- by hcj
-				setLight(LIGHT_OFF);//+ by hcj
 				flag = false;
+				
+				setLight(LIGHT_OFF);//+ by hcj
+				mStartWork = false;//+ by hcj
 			}
+//+ by hcj @{			
+			else if(photonum > 0){
+				Log.i(ConfigUtil.TAG_CONTINUES,"cjStartWork by continues");
+				cjStartWork(false);
+			}
+//+ by hcj @}
 			Message msg = new Message();
 			msg.obj = arg0;
 			msg.what = 100;
 			handler.sendMessage(msg);
 		}
+//+ by hcj @{		
+		else{
+			mStartWork = false;
+		}
+//+ by hcj @}		
 	}
 	
 	ShutterCallback shutterCallback = new ShutterCallback() {  
@@ -304,16 +370,22 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
     };
 	
 	private void startBroadcastListener() {
-		if(!registed){
+		//if(!registed){
 		    //注册广播接收抓拍请求
 			IntentFilter filter = new IntentFilter();
 			filter.addAction(Utils.CAMERA_TAKEPICTURE_ACTION);
 			filter.addAction("com.gs.getIso");
+			filter.addAction("com.cj.state_changed");//+ by hcj
+			filter.addAction("com.cj.img_upload.done");//+ by hcj
+			filter.addAction("com.cj.alarm.check_day_night_time");//+ by hcj
+			filter.addAction("android.deivce.DURING_DAY_MODEL");//+ by hcj
+			filter.addAction(Intent.ACTION_TIME_CHANGED);//+ by hcj
+			filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);//+ by hcj
 			registerReceiver(receiver, filter);
 			registed = true;
 			Log.i(TAG, "--register CAMERA_TAKEPICTURE_ACTION Receiver success");
 			Utils.registered = true;
-		}
+		//}
 	}
 	
 	
@@ -382,19 +454,23 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
     
     private BroadcastReceiver receiver = new BroadcastReceiver(){
 		public void onReceive(Context context, Intent intent) {
-			Log.i(TAG, "--action:"+intent.getAction());
+			Log.i(ConfigUtil.TAG, "BootCameraService onReceive:"+intent.getAction());
 			if(intent.getAction().equals(Utils.CAMERA_TAKEPICTURE_ACTION)){
 				//triggerModel = Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TRIGGERMODEL);
 				//takingModel = intent.getIntExtra(Utils.INTENT_TAKINGMODEL, 1);
 				//fileSize = intent.getIntExtra(Utils.INTENT_FILESIZE, 4);
 				//handler.sendEmptyMessage(START_CAMERA);
-				if(intent.hasExtra("dx")){
+				if(ConfigUtil.FEATURE_SMS_PIC_SIZE_FIX &&  intent.hasExtra("dx")){
 					if(mCamera!=null){
+						/*- by hcj
 						System.out.println("guosong mcamera!=null");
 						Parameters params = mCamera.getParameters();
 						params.setPreviewSize(320, 240);
 						mCamera.setParameters(params);
 						Log.i(TAG, "mCamera.setParameters");
+						*/
+						comSetPreviewSize(320, 240);//+ by hcj
+						key68=true;
 					}else{
 						System.out.println("guosong mcamera==null");
 						key68=true;
@@ -402,15 +478,15 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 					}
 				}
 				//+ by hcj @{
-				if(intent.hasExtra("takepic_action")){
-					Log.i(ConfigUtil.TAG_TAKEPIC,"takepic_action="+intent.getStringExtra("takepic_action"));
-				}
+				cjTriggerWork(intent.hasExtra("dx") ? TRIGGER_BY_SMS : TRIGGER_BY_TIMER);//+ by hcj
 				//+ by hcj @}
+				/*
 				photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 				Log.i(TAG, "photonum1="+String.valueOf(photonum));
 				Log.i(ConfigUtil.TAG_CONTINUES,"startWork by timer");
 				startWork();
-				
+				*/
+/*- by hcj
 			}else if("com.gs.getIso".equals(intent.getAction())){
 				System.out.println("guosong set 10 min get ISo vaule");
 				isosetup = 0;
@@ -422,16 +498,55 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 					msg.what = 103;
 					handler.sendMessageDelayed(msg, 5000);
 				}
+*/				
 			}
+		//+ by hcj @{
+			else if("com.cj.state_changed".equals(intent.getAction())){
+				cjSetCameraConfig(false);
+			}else if("com.cj.img_upload.done".equals(intent.getAction())){
+				getmTimer();
+			}else if("com.cj.alarm.check_day_night_time".equals(intent.getAction())){
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"onReceive com.cj.alarm.check_day_night_time");
+				fullSleepTimeCheck();
+			}else if("android.deivce.DURING_DAY_MODEL".equals(intent.getAction())){
+				if(mVarCommon.isCameraFullSleep()){
+					Log.i(ConfigUtil.TAG_DAYNIGHT,"onReceive DURING_DAY_MODEL skip by mVarCommon.isCameraFullSleep()");
+					return;
+				}
+				setGetIsoAlarm();
+				//from "com.gs.getIso"
+				isosetup = 0;
+				handler.removeMessages(103);
+				if(photonum == 0){
+				    getIsoVaule();
+				} else {
+					Message msg = new Message();
+					msg.what = 103;
+					handler.sendMessageDelayed(msg, 5000);
+				}
+			}else if(Intent.ACTION_TIME_CHANGED.equals(intent.getAction())
+				||Intent.ACTION_TIMEZONE_CHANGED.equals(intent.getAction())){
+				if(BootBroadcastReceiver.getcurrYearfalg()){
+					if(!mTimeSyncDone){
+						mTimeSyncDone = true;
+						onTimeSyncDone();
+					}
+				}
+			}
+		//+ by hcj @}
 		}
 	};
 	public void getIsoVaule(){
 		//+ by hcj @{
+		if(mVarCommon.isCameraFullSleep()){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"getIsoVaule skip by mVarCommon.isCameraFullSleep()");
+			return;
+		}
 		Log.i(ConfigUtil.TAG,"getIsoVaule FEATURE_DAY_NIGHT_CHECK_POLICY="+ConfigUtil.FEATURE_DAY_NIGHT_CHECK_POLICY);
 		if(ConfigUtil.FEATURE_DAY_NIGHT_CHECK_POLICY == ConfigUtil.DAY_NIGHT_CHECK_ONLY_AUTOLIGHT_ON){
 			String auto_lighte=Utils.getProperty(this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
 			if("0".equals(auto_lighte)){
-				Log.i(ConfigUtil.TAG,"getIsoVaule skip by auto light off!");
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"getIsoVaule skip by auto light off!");
 				setLight(LIGHT_OFF,this);
 				DayNightModeSet(true,2);
 				return;
@@ -439,8 +554,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		}
 		//+ by hcj @}
 		String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
+		if(isCameraStandby()){
+			setCameraIdle();
+			getmTimer();
+		}
 		if(/*"3".equals(triggerModel)*/true){//m by hcj
-			
+			/*
 			Log.i(TAG, "---startCamera getIsoVaule");
 			if(mCamera==null){
 				mCamera = Camera.open();
@@ -462,22 +581,32 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 				preview = true;
 				key68=false;
 			}
+			*/
+			cjStartCamera();
 		}else{
 			if(flagSeelp==0){
 				setSleepfalg(1);
 			}
 		}
+		/*
 		try {
 			Thread.sleep(5000);
 		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		*/
+		/*
+		MiscUtils.threadSleep(5000);
 		flagDay(this);
 		getmTimer();
+		*/
+		handler.postDelayed(mCheckDayNightRunnable,5000);
 	}
 	int height = 1088;//Integer.parseInt(size[0]);
     int width = 1920;//Integer.parseInt(size[1]);
+    
+/*    
 	private void startCamera(SurfaceHolder holder,boolean mflag) {
 		Log.i(TAG, "---startCamera");
 		if(mCamera==null){
@@ -491,8 +620,9 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			params.setPictureSize(width, height);
 			params.setPreviewSize(width, height);
 			//params.setSceneMode(Camera.Parameters.SCENE_MODE_SPORTS);
-			if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
-			params.set("zsd-mode", "off");}
+			//if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
+			//params.set("zsd-mode", "off");}
+			params.set("zsd-mode", (mWorkPolicy == WORK_POLICY_STANDBY_AFTER_WORK) ? "on" : "off");//+ by hcj
 			//params.setPreviewFrameRate(30);
 			//params.setBrightnessMode(value);
 			//params.setb
@@ -508,13 +638,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			mCamera.startPreview();
 			preview = true;
 			if(mflag){
-				/*IO.cmd(2);
-				try {
-					Thread.sleep(250);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}*/
+				//IO.cmd(2);
+				//MiscUtils.threadSleep(250);
 				flag=mflag;
 				//photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
 			}
@@ -533,8 +658,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			String[] size = ImgSize.getImgSize(fileSize);
 			height = Integer.parseInt(size[0]);
 		    width = Integer.parseInt(size[1]);
-		    if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
-				params.set("zsd-mode", "off");}
+		    //if("1".equals(Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL))){
+			params.set("zsd-mode", (mWorkPolicy == WORK_POLICY_STANDBY_AFTER_WORK) ? "on" : "off");
 		    Log.i(TAG, "--width:+"+width+" height:"+height);
 			//params.setPictureSize(width, height);
 			if(key68){
@@ -547,27 +672,27 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			String auto_lighte=Utils.getProperty(BootCameraService.this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
 			Log.i(ConfigUtil.TAG_LIGHT,"startCamera1 auto_lighte="+auto_lighte+",flagDay="+flagDay);
 			//if("3".equals(triggerModel) && !"0".equals(auto_lighte)&&!flagDay){//- by hcj
-			if(isLightEnable(BootCameraService.this)){//+ by hcj
-				IO.cmd(14);
+			//if(isLightEnable(BootCameraService.this)){//+ by hcj
+				//IO.cmd(14);
 				//IO.cmd(2);//- by hcj
-				setLight(LIGHT_ON);
-				//+ by hcj @{
-				if(ConfigUtil.DBG_LIGHT){
-					Log.i(ConfigUtil.TAG_LIGHT,"startCamera1 IO.cmd(2)");
-				}
-				//+ by hcj @}
-			}
+				//setLight(LIGHT_ON);
+			//}
 			//params.setExposureCompensation(ImgSize.getExposure(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_TIEM))));
 			//params.setWhiteBalance(ImgSize.getWhiteBalance(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_WHITE_BALANCE))));
 			mCamera.setParameters(params);
 			mCamera.startPreview();
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+//+ by hcj @{		
+			Log.i(ConfigUtil.TAG,"startCamera1 delay 1000 by open camera");
+			MiscUtils.threadSleep(1000);
+			mStartTime = System.currentTimeMillis();
+			Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa startWork time="+mStartTime);  
+			if(isLightEnable(BootCameraService.this)){//+ by hcj
+			  	if(setLight(LIGHT_ON)){
+					Log.i(ConfigUtil.TAG,"startWork app set light on, delay to work");
+					MiscUtils.threadSleep(ConfigUtil.WORK_AFTER_LIGHT_ON_DELAY_MS);//+ by hcj ,the picture would be black with out delay
+			  	}
 			}
-			Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa startWork time="+System.currentTimeMillis());  
+//+ by hcj @}			
 			mCamera.setOneShotPreviewCallback(BootCameraService.this);
 			preview = true;
 			key68=false;
@@ -576,18 +701,18 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			t.setAlarmTime(Utils.DURING_DAY_MODEL,10,9);
 		}
 	}
+*/
+	
 	Timer mTimer;
 	public void getmTimer()
 	{
 		//+ by hcj @{
-		if(ConfigUtil.FEATURE_CAMERA_SLEEP_POLICY == ConfigUtil.CAMERA_SLEEP_NEVER){
-			Log.i(ConfigUtil.TAG,"getmTimer skip by nerver sleep");
+		if(mWorkPolicy == WORK_POLICY_WORK_ALWAYS){
+			Log.i(ConfigUtil.TAG,"getmTimer skip by WORK_POLICY_WORK_ALWAYS");
 			return;
-		}else if(ConfigUtil.FEATURE_CAMERA_SLEEP_POLICY == ConfigUtil.CAMERA_SLEEP_NIGHT_ONLY){
-			if(flagDay) {
-				Log.i(ConfigUtil.TAG,"getmTimer skip by day mode");
-				return;
-			}
+		}else if((mWorkPolicy == WORK_POLICY_DAY_WORK_NIGHT_SLEEP) && !mVarCommon.isCameraFullSleep()){
+			Log.i(ConfigUtil.TAG,"getmTimer skip by WORK_POLICY_DAY_WORK_NIGHT_SLEEP && !mVarCommon.isCameraFullSleep()");
+			return;
 		}
 		//+ by hcj @}
 		if (mTimer != null || "".equals(mTimer))
@@ -606,16 +731,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			{
 				//IO.cmd(3);//- by hcj
 				setLight(LIGHT_OFF);//+ by hcj
-				//+ by hcj @{
-				if(ConfigUtil.DBG_LIGHT){
-					Log.i(ConfigUtil.TAG_LIGHT,"getmTimer IO.cmd(3)");
+				if((mWorkPolicy == WORK_POLICY_SLEEP_AFTER_WORK) || (mWorkPolicy == WORK_POLICY_DAY_WORK_NIGHT_SLEEP)){
+					setCameraPowerOffSleep();
+				}else{
+					setCameraStandby();
 				}
-				//+ by hcj @}
-				//if(!"3".equals(triggerModel)){
-					//setSleepfalg(0);
-				//}else{
-				stopCamera("getmTimer");
-				//}
+				//stopCamera("getmTimer");//- by hcj
 				mTimer.cancel();
 				mTimer=null;
 				//handler.sendEmptyMessage(101);
@@ -623,8 +744,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		}, ms, ms);
 	}
 	
-	static Boolean flagDay=true;//true 白天 false 黑夜
-	public static void flagDay(Context context){
+	/*static*/private Boolean flagDay=true;//true 白天 false 黑夜
+	public /*static*/ void flagDay(Context context){
 		try{
 			/*- by hcj
 			String auto_lighte=Utils.getProperty(context, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
@@ -640,10 +761,10 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			}
 			*/
 			String iso_value=SystemProperties.get("camera.iso.value");
-			String exptime=SystemProperties.get("camera.exptime.value");
+			String exptime=SystemProperties.get("camera.exptime.value");//getDev();//
 			int getSetExp=ImgSize.getExposure(Integer.parseInt(Utils.getProperty(context, Utils.KEY_FTP_IMG_TIEM)));
 			Boolean curDay=true;
-			Log.i(ConfigUtil.TAG_LIGHT,"flagDay iso_value="+iso_value+",ftp_exptime="+getSetExp+",real_exptime="+exptime);//+ by hcj
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"flagDay iso_value="+iso_value+",ftp_exptime="+getSetExp+",real_exptime="+exptime);//+ by hcj
 			DayNightModeCheck(context, Integer.parseInt(iso_value), getSetExp, Integer.parseInt(exptime));
 			/*
 			System.out.println((flagDay!=curDay)+"=guoiso_value="+iso_value+"getSetExp="+getSetExp+"extime="+exptime);
@@ -696,6 +817,9 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	public static void setDev(Object o){
 		String cmd = String.format("echo %s > %s\n", o, "/sys/bus/platform/drivers/extval/extval_val");
 		Log.i(ConfigUtil.TAG,"setDev cmd="+cmd);
+		ShellUtils.CommandResult result = ShellUtils.execCommand(cmd, false, true);
+		Log.i(ConfigUtil.TAG,"setDev result.result="+result.result+",result.successMsg="+result.successMsg+",result.errorMsg="+result.errorMsg);
+/*- by hcj
 		//System.out.println("guosong setDev===="+cmd);
         try {
             Process exeEcho = Runtime.getRuntime().exec("sh");
@@ -705,6 +829,7 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
         	//e.printStackTrace();
         	Log.i(ConfigUtil.TAG,"setDev e="+e);
         }
+*/
 	}
 	private void stopCamera(String reseaon) {
 		//Log.i(TAG, "--stopCamera");
@@ -783,7 +908,8 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   		  					takingNum++;
   		  					takingID = takingNum;
   		  					 try {  
-  		 			        	startCamera(mSurfaceHolder,true);
+  		 			        	//startCamera(mSurfaceHolder,true);
+  		 			        	cjStartCamera(mSurfaceHolder);//+ by hcj
   		 			        } catch(Exception e) {  
   		 			            Log.e(TAG, "--BroadcastReceiver error",e);  
   		 			        }
@@ -824,11 +950,15 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   			case 100:
 				Log.i(ConfigUtil.TAG_CONTINUES,"aaaaa handleMessage time="+System.currentTimeMillis()); 
   				System.out.println("guosong msg.what=100="+photonum);
+				mLogManager.Log("handleMessage time="+System.currentTimeMillis());
+				/*
   				if(photonum>0){
   					Log.i(TAG, "photonum>0");
 					Log.i(ConfigUtil.TAG_CONTINUES,"startWork by continues");
-  					startWork();
+  					//startWork();
+  					cjStartWork();//+ by hcj
   				}
+  				*/
 				final byte[] data = (byte[]) msg.obj;
 				String index = "A";
 				switch (gettakingID()) {
@@ -864,15 +994,23 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	        		};
 	        	}.start();
 				}else{
-					System.out.println("guo test time < 2016 is 2010");
+					//System.out.println("guo test time < 2016 is 2010");
+					Log.i(ConfigUtil.TAG,"test time < 2016");
+					mLogManager.Log("handleMessage test time < 2016");
 				}
 				break;
   			case 101:
   				System.out.println("key4================");
   				Intent intent = new Intent();  
 	        	intent.setAction("com.gs.camera");
+			intent.putExtra("imgPath",(String)msg.obj);
 	        	sendBroadcast(intent);
-	        	Log.i(TAG, "com.gs.camera");
+	        	Log.i(ConfigUtil.TAG, "broadcast com.gs.camera");
+//+ by hcj @{
+				this.removeMessages(104);
+				this.sendEmptyMessageDelayed(104,6000);//add delay in BootBroadcastReceiver
+//+ by hcj @}
+/*- by hcj for block onPreviewFrame()
 	        	try {
 					Thread.sleep(1000);
 				} catch (InterruptedException e) {
@@ -883,12 +1021,16 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	        	sendBroadcast(intent);
 	        	System.out.println("guosong update xml");
 	        	Log.i(TAG, "android.intent.action.updatexml");
+*/
   				break;
+/*- by hcj
   			case 102:
   				System.out.println("guosong startWork"+msg.what);
-				Log.i(ConfigUtil.TAG_CONTINUES,"startWork by handleMessage 102");
-  				startWork();
+  				//startWork();
+				Log.i(ConfigUtil.TAG_CONTINUES,"cjTriggerWork by handleMessage 102");
+  				cjTriggerWork("102");//+ by hcj
   				break;
+*/
   			case 103:
   				if(photonum == 0){
   					isosetup = 0;
@@ -904,6 +1046,12 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 					isosetup++;
 				}
   				break;
+		//+ by hcj @{		
+			case 104:
+				Log.i(ConfigUtil.TAG,"updatexml 1000ms after com.gs.camera");
+		        	sendBroadcast(new Intent("android.intent.action.updatexml"));
+				break;
+		//+ by hcj @}		
   			default:
   				break;
   			}
@@ -924,12 +1072,14 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
   	public void pho(byte[] data,File file,String path,String jpgName) {
   		System.out.println("key2================");
   		Size size = mCamera.getParameters().getPreviewSize();
-  		Log.i(TAG, "pho");
+  		//Log.i(TAG, "pho");
+  		Log.i(ConfigUtil.TAG,"pho size="+size.width+"x"+size.height);
+		mLogManager.Log("pho jpgName="+jpgName);
 		try {
 			FileOutputStream outStream = new FileOutputStream(file);
 			YuvImage image = new YuvImage(data, ImageFormat.NV21, size.width, size.height, null);
 			if (image != null) {
-				Log.i(TAG, "image !null");
+				Log.i(ConfigUtil.TAG, "pho image !null");
 				ByteArrayOutputStream stream = new ByteArrayOutputStream();
 				image.compressToJpeg(new Rect(0, 0, size.width, size.height), 80, stream);
 				BitmapFactory.decodeByteArray(stream.toByteArray(), 0, stream.size());
@@ -937,9 +1087,9 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 				stream.close();
 				preview = true;
 				Log.i(TAG, "photonum3="+String.valueOf(photonum));
-				if(photonum==0){
-					Log.i(TAG, "photonum == 0");
-					System.out.println("key3================");
+				//if(photonum==0){//- by hcj
+					//Log.i(TAG, "photonum == 0");
+					//System.out.println("key3================");
 	        	//Intent intent = new Intent();  
 	        	//intent.setAction(Utils.CAMERA_UPLOAD_SERVICE_ACTION);
 	        	//intent.putExtra(Utils.INTENT_CAMERA_NAME_JPG, jpgName);
@@ -947,14 +1097,25 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	        	//sendBroadcast(intent);
         		//System.gc();
         		//System.runFinalization();
-				handler.sendEmptyMessage(101);
-				}
+				//handler.sendEmptyMessage(101);//- by hcj
+//+ by hcj @{
+				//Message.obtain(handler,101,path).sendToTarget();
+				Intent intent = new Intent();  
+		        	intent.setAction("com.gs.camera");
+				intent.putExtra("imgPath",path);
+		        	sendBroadcast(intent);
+					
+				handler.removeMessages(104);
+				handler.sendEmptyMessageDelayed(104,6000);//add delay in BootBroadcastReceiver
+//+ by hcj @}
+				//}//- by hcj
 			} else {
-				Log.i(TAG, "image null");
+				Log.i(ConfigUtil.TAG, "image null");
 			}
 		} catch (Exception ex) {
-			Log.e("Sys", "Error:" + ex.getMessage());
-			Log.i(TAG, "image Exception");
+			//Log.e("Sys", "Error:" + ex.getMessage());
+			Log.i(ConfigUtil.TAG, "pho Exception:"+ex);
+			mLogManager.Log("pho Exception:"+ex);
 		}
 		// }
 	}
@@ -975,85 +1136,849 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 	}
 	
   	//+ by hcj @{
-  	//private boolean mStartWork = false;
+  	private boolean mStartWork = false;
+	private long mStartTime;
+
+	private void cjIoCmd(int cmd){
+		Log.i(ConfigUtil.TAG_LIGHT,"cjIoCmd cmd="+cmd);
+		IO.cmd(cmd);
+	}
+
+	private void cjIoMode(int mode){
+		Log.i(ConfigUtil.TAG_LIGHT,"cjIoMode mode="+mode);
+		IO1.mode(mode);
+	}
 	
   	private static final int LIGHT_ON = 2;
 	private static final int LIGHT_OFF = 3;
-  	private static void setLight(int state, Context context){
+  	private /*static*/ boolean setLight(int state, Context context){
 		if(!"3".equals(Utils.getProperty(context,Utils.KEY_FTP_TRIGGERMODEL))){
-			Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by trigger mode non timer");
-			return;
-		}else if(flagDay && (state == LIGHT_ON)){
-			Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by Day mode");
-			return;
+			if(ConfigUtil.FEATURE_FLASHLIGHT_CTRL_POLICY == ConfigUtil.FLASHLIGHT_CTRL_BY_DRV ){
+				Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by FLASHLIGHT_CTRL_BY_DRV");
+				return false;
+			}else if(state == LIGHT_ON){
+				Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by FLASHLIGHT_CTRL_BY_APP && LIGHT_ON");
+				return false;
+			}
+		}
+		if(flagDay && (state == LIGHT_ON)){
+			Log.i(ConfigUtil.TAG_LIGHT,"setLight skip by flagDay && LIGHT_ON");
+			return false;
 		}
 		Log.i(ConfigUtil.TAG_LIGHT,"setLight state="+state);
-		IO.cmd(state);
+		cjIoCmd(state);
+		return (state == LIGHT_ON);
   	}
 
-	private void setLight(int state){
-		setLight(state,this);
+	private boolean setLight(int state){
+		return setLight(state,this);
 	}
 
-	private static void setLightEnable(boolean enable){
-		int state = enable ? 14 : 15;
-		Log.i(ConfigUtil.TAG_LIGHT,"setLightEnable state="+state);
-		IO.cmd(state);
+	private void setLightMode(){
+		int cmd = 18;
+		if(mContinuesNum == 1){
+			cmd = 18;
+		}else if(mContinuesNum == 2){
+			cmd = 19;
+		}else if(mContinuesNum == 3){
+			cmd = 20;
+		}
+		if(mWorkPolicy == WORK_POLICY_STANDBY_AFTER_WORK){
+			cmd += 3;
+		}
+		Log.i(ConfigUtil.TAG_LIGHT,"setLightMode cmd="+cmd);
+		cjIoMode(cmd);
+	}
+
+	private boolean mLightEnable;
+	private void setLightEnable(){
+		String lightEn=Utils.getProperty(this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
+		boolean enable = (!"0".equals(lightEn) && !flagDay && !mVarCommon.isCameraFullSleep() && mTimeSyncDone);
+		Log.i(ConfigUtil.TAG_LIGHT,"setLightEnable lightEn="+lightEn+",flagDay="+flagDay
+			+",isCameraFullSleep="+mVarCommon.isCameraFullSleep()+",mTimeSyncDone="+mTimeSyncDone);
+		
+		int cmd = enable ? 14 : 15;
+		cjIoCmd(cmd);
+		
+		mLightEnable = enable;
+
+		setLightMode();
 	}
 
 	private boolean isLightEnable(Context context){
+	/*
 		  String auto_lighte=Utils.getProperty(context, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
 		  boolean enable = (!"0".equals(auto_lighte) && !flagDay);
 		  Log.i(ConfigUtil.TAG_LIGHT,"isLightEnable enable="+enable);
 		  return enable;
+	  */
+	  	  return mLightEnable;
+	}
+
+	private boolean isFullSleepTime(){
+		Calendar calendar = Calendar.getInstance();
+		calendar.setTimeInMillis(System.currentTimeMillis());
+		int hour = calendar.get(Calendar.HOUR_OF_DAY);
+		if(ConfigUtil.DBG_DAYNIGHT){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"isFullSleepTime current time1:"+sdf.format(calendar.getTime()));
+		}
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"isFullSleepTime hour="+hour+",mRebootTime1="+mRebootTime1+",mRebootTime2="+mRebootTime2);
+		//return !(hour >= mRebootTime2 && hour < mRebootTime1);
+		return (mRebootTime1 < mRebootTime2 && (hour >= mRebootTime1 && hour < mRebootTime2))
+			|| (mRebootTime1 > mRebootTime2 && !(hour >= mRebootTime2 && hour < mRebootTime1));
 	}
 
 	private void DayNightModeInit(){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"DayNightModeInit");
+/*
+		fullSleepTimeCheck();//first cjSetCameraConfig(true) could not call it
+		//init state is not full sleep ,so if still not full sleep here, we should reset alarm since fullSleepTimeCheck() skip rest by same mode
+		if(!mVarCommon.isCameraFullSleep()){
+			cjResetFullSleepAlarm();
+		}
+*/
 		flagDay = false;
 		DayNightModeSet(true,2);
 	}
 
-	private static void DayNightModeSet(boolean isDay, int configExp){
-		Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet isDay="+isDay);
+	private /*static*/ void DayNightModeSet(boolean isDay, int configExp){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"DayNightModeSet isDay="+isDay);
 		if(isDay == flagDay){
-			Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet skip by same mode");
-			return;
+			//Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet skip by same mode");
+			//return;
 		}
 		flagDay = isDay;
+		setLightEnable();
 		if(isDay){
-			setLightEnable(false);
 			setDev(2);
 		}else{
-			if(!ConfigUtil.FEATURE_DISABLE_TAKEPIC_ON_NIGHT){
-				setLightEnable(true);
-			}else{
-				Log.i(ConfigUtil.TAG_LIGHT,"DayNightModeSet night but take picture disabled");
-			}
 			setDev(configExp);
 		}
 	}
 
-	private static void DayNightModeCheck(Context context, int isoValue, int configExp, int realExp){
+	private void fullSleepTimeCheck(){
+		if(!mTimeSyncDone){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"fullSleepTimeCheck skip by mTimeSyncDone=false");
+			return;
+		}
+		if(mWorkPolicy != WORK_POLICY_DAY_WORK_NIGHT_SLEEP){
+			if(mVarCommon.isCameraFullSleep()){
+				setCameraFullSleep(false);
+			}
+			return;
+		}
+		boolean isFullSleep = isFullSleepTime();
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"fullSleepTimeCheck isFullSleep="+isFullSleep);
+		setCameraFullSleep(isFullSleep);
+	}
+
+	private /*static*/ void DayNightModeCheck(Context context, int isoValue, int configExp, int realExp){
 		boolean isDay = true;
-		
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"DayNightModeCheck iso threhold="+ConfigUtil.DAY_NIGHT_ISO_THRESHOLD);
 		if(configExp != 2 && configExp < realExp){
 			Log.i(ConfigUtil.TAG_LIGHT,"Night mode by configExp != 2 && configExp< realExp");
 			isDay = false;
 		}else if(configExp == 2){
 			isDay = flagDay;
-		}else if(isoValue <= 200){
+		}else if(isoValue <= ConfigUtil.DAY_NIGHT_ISO_THRESHOLD){
 			if(configExp < realExp){
-				Log.i(ConfigUtil.TAG_LIGHT,"Night mode by iso_value <= 200 && configExp < realExp");
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"Night mode by iso_value <= threshold && configExp < realExp");
 				isDay = false;
 			}else{
-				Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value <= 200 && configExp>=realExp");
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"Day mode by iso_value <= threshold && configExp>=realExp");
 				isDay = true;
 			}
 		}else{
-			Log.i(ConfigUtil.TAG_LIGHT,"Day mode by iso_value > 200");//+ by hcj
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"Day mode by iso_value > threshold");//+ by hcj
+			isDay = true;
+		}
+		/*
+		if(flagDay){
+			if(configExp != 2 && configExp < realExp){
+				isDay = false;
+			}
+		}else{
+			if(isoValue >= ConfigUtil.DAY_NIGHT_ISO_THRESHOLD){
+				isDay = false;
+			}
+		}
+		*/
+		if(ConfigUtil.DBG_LIGHT){
 			isDay = true;
 		}
 		DayNightModeSet(isDay,configExp);
 	}
-  	//+ by hcj @}
+
+	private Runnable mCheckDayNightRunnable = new Runnable(){
+		@Override
+		public void run(){
+			if(mVarCommon.isCameraFullSleep()){
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"mCheckDayNightRunnable.run skip by mVarCommon.isCameraFullSleep()");
+				return;
+			}
+			flagDay(BootCameraService.this);
+			getmTimer();
+		}
+	};
+
+	private void comSetPreviewSize(int width, int height){
+		if(mCamera == null){
+			return;
+		}
+		Parameters params = mCamera.getParameters();
+		Size size=params.getPreviewSize();
+		if(size.width == width && size.height == height){
+			Log.i(ConfigUtil.TAG,"comSetPreviewSize skip by same size");
+			return;
+		}
+		Log.i(ConfigUtil.TAG,"comSetPreviewSize width="+width+",height="+height);
+		params.setPreviewSize(width, height);
+		mCamera.setParameters(params);
+		mCamera.stopPreview();
+		mCamera.startPreview();
+	}
+
+	public static String getDev(){
+		String retValue = null;
+		String cmd = String.format("cat /sys/bus/platform/drivers/extval/extval_val");
+		Log.i(ConfigUtil.TAG,"getDev cmd="+cmd);
+		ShellUtils.CommandResult result = ShellUtils.execCommand(cmd, false, true);
+		if(result != null){
+			if(result.result == 0){
+				retValue = result.successMsg;
+			}else{
+				Log.i(ConfigUtil.TAG,"getDev result.result="+result.successMsg+",result.errorMsg="+result.errorMsg);
+			}
+		}else{
+			Log.i(ConfigUtil.TAG,"getDev result is null");
+		}
+		return retValue;
+	}
+
+	private static final int CAMERA_STATE_FLAG_IDLE = 0;
+	private static final int CAMERA_STATE_FLAG_SLEEP = 1<<0;
+	private static final int CAMERA_STATE_FLAG_STANDBY = 1<<1;
+	private static final int CAMERA_STATE_FLAG_FULL_SLEEP = 1<<2;
+	private int mCameraState;
+	private void setCameraFullSleep(boolean isFullSleep){
+		Log.i(ConfigUtil.TAG_POWER,"setCameraFullSleep,isFullSleep="+isFullSleep);
+		boolean isFullSleepCurr = mVarCommon.isCameraFullSleep();
+		if(isFullSleep){
+			mCameraState |= CAMERA_STATE_FLAG_FULL_SLEEP;
+		}else{
+			mCameraState &= (~CAMERA_STATE_FLAG_FULL_SLEEP);
+		}
+		mVarCommon.setCameraFullSleep(isFullSleep);
+
+		if(isFullSleepCurr != isFullSleep){
+			//reset light
+			setLightEnable();
+			//reset alarm
+			cjResetFullSleepAlarm();
+			//delay to poweroff sleep
+			if(isFullSleep){
+				getmTimer();
+			}
+		}
+		//20161224 + for reboot time change work imediately
+		else if((mConfigChangeMask & CONFIG_MASK_REBOOT_TIME) != 0){
+			cjResetFullSleepAlarm();
+		}
+	}
+
+	private boolean isCameraFullSleep(){
+		return (mCameraState&CAMERA_STATE_FLAG_FULL_SLEEP) != 0;
+	}
+	
+	private void setCameraPowerOffSleep(){
+		stopCamera("setCameraPowerOffSleep");
+		mCameraState |= CAMERA_STATE_FLAG_SLEEP;
+		Log.i(ConfigUtil.TAG_POWER,"setCameraPowerOffSleep,mCameraState="+mCameraState);
+		mLogManager.Log("setCameraPowerOffSleep");
+	}
+
+	private void setCameraStandby(){
+		if(mVarCommon.isImgUploading()){
+			Log.i(ConfigUtil.TAG_POWER,"setCameraStandby,skip by isImgUploading()");
+			mLogManager.Log("setCameraStandby,skip by isImgUploading()");
+			return;
+		}
+		cjSetCameraZsd(true);
+		
+		setDev(0);
+		mCameraState |= CAMERA_STATE_FLAG_STANDBY;
+		Log.i(ConfigUtil.TAG_POWER,"setCameraStandby,mCameraState="+mCameraState);
+		mLogManager.Log("setCameraStandby");
+	}
+
+	private void setCameraIdle(){
+		setDev(1);
+		mCameraState &= (~CAMERA_STATE_FLAG_STANDBY);
+		Log.i(ConfigUtil.TAG_POWER,"setCameraIdle,mCameraState="+mCameraState);
+		mLogManager.Log("setCameraIdle");
+	}
+
+	private boolean isCameraSleep(){
+		return /*(mCameraState&CAMERA_STATE_FLAG_SLEEP) != 0*/(mCamera == null);
+	}
+
+	private boolean isCameraStandby(){
+		return (mCameraState&CAMERA_STATE_FLAG_STANDBY) != 0;
+	}
+
+	private void cjResetFullSleepAlarm(){
+		if(!mTimeSyncDone){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"cjResetFullSleepAlarm skip by mTimeSyncDone=false");
+			return;
+		}
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"cjResetFullSleepAlarm");
+		if(mWorkPolicy != WORK_POLICY_DAY_WORK_NIGHT_SLEEP){
+			cancelFullSleepCheckAlarm();
+			//set iso alarm
+			setGetIsoAlarm();
+			return;
+		}
+		
+		setFullSleepCheckAlarm(mVarCommon.isCameraFullSleep());
+		if(mVarCommon.isCameraFullSleep()){
+			cancelGetIsoAlarm();
+		}else{
+			setGetIsoAlarm();
+		}
+	}
+
+	private static final int WORK_POLICY_WORK_ALWAYS = 0;
+	private static final int WORK_POLICY_DAY_WORK_NIGHT_SLEEP = 1;
+	private static final int WORK_POLICY_SLEEP_AFTER_WORK = 2;
+	private static final int WORK_POLICY_STANDBY_AFTER_WORK = 3;
+	private int mWorkPolicy = -1;
+	private void cjSetCameraWorkPolicy(){
+		String wb = Utils.getProperty(this,Utils.KEY_FTP_IMG_WHITE_BALANCE);
+		int oldPolicy = mWorkPolicy;
+		if(mCameraTriggerMode == CAMERA_TRIGGER_MODE_TIMER){
+			mWorkPolicy = WORK_POLICY_SLEEP_AFTER_WORK;
+		}else{
+			if("1".equals(wb)){
+				mWorkPolicy = WORK_POLICY_WORK_ALWAYS;
+			}else if("2".equals(wb)){
+				mWorkPolicy = WORK_POLICY_DAY_WORK_NIGHT_SLEEP;
+			}else if("3".equals(wb)){
+				mWorkPolicy = WORK_POLICY_SLEEP_AFTER_WORK;
+			}else if("4".equals(wb)){
+				mWorkPolicy = WORK_POLICY_STANDBY_AFTER_WORK;
+			}
+		}
+		Log.i(ConfigUtil.TAG,"setCameraWorkPolicy mWorkPolicy="+mWorkPolicy+",oldPolicy="+oldPolicy);
+		
+		if(oldPolicy != mWorkPolicy && oldPolicy != -1){
+			mConfigChangeMask |= CONFIG_MASK_WORK_POLICY;
+		}
+	}
+
+	private static final int CAMERA_TRIGGER_MODE_KEY = 0;
+	private static final int CAMERA_TRIGGER_MODE_TIMER = 1;
+	private int mCameraTriggerMode = CAMERA_TRIGGER_MODE_KEY;
+	private void cjSetCameraTriggerMode(){
+		String mode = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
+		if("1".equals(mode)){
+			mCameraTriggerMode = CAMERA_TRIGGER_MODE_KEY;
+		}else if("3".equals(mode)){
+			mCameraTriggerMode = CAMERA_TRIGGER_MODE_TIMER;
+		}
+		Log.i(ConfigUtil.TAG,"setCameraTriggerMode mCameraTriggerMode="+mCameraTriggerMode);
+	}
+
+	private int mContinuesNum = -1;
+	private void cjSetCameraContinuesNum(){
+		int oldNum = mContinuesNum;
+		mContinuesNum = MiscUtils.strToInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL),1);
+		//setLightEnable();
+		if(oldNum != mContinuesNum && oldNum != -1){
+			mConfigChangeMask |= CONFIG_MASK_CONTINUS_NUM;
+		}
+		Log.i(ConfigUtil.TAG,"cjSetCameraContinuesNum mContinuesNum="+mContinuesNum);
+	}
+
+	private int mRebootTime1 = -1;
+	private int mRebootTime2 = -1;
+	private void cjSetCameraRebootTime(){
+		String rebootTime = Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_REBOOTIEM);
+		Log.i(ConfigUtil.TAG,"cjSetCameraRebootTime rebootTime="+rebootTime);
+		if(rebootTime == null){
+			return;
+		}
+		String[] splitStrs = rebootTime.split("-");
+		if(splitStrs == null || splitStrs.length != 2){
+			Log.i(ConfigUtil.TAG,"cjSetCameraRebootTime splitStrs invalid");
+			return;
+		}
+		int time1 = MiscUtils.strToInt(splitStrs[0],-1);
+		int time2 = MiscUtils.strToInt(splitStrs[1],-1);
+		if((mRebootTime1 != time1 && mRebootTime1 != -1) || (mRebootTime2 != time2 && mRebootTime2 != -1)){
+			mConfigChangeMask |= CONFIG_MASK_REBOOT_TIME;
+		}
+		mRebootTime1 = time1;
+		mRebootTime2 = time2;
+		Log.i(ConfigUtil.TAG,"cjSetCameraRebootTime mRebootTime1="+mRebootTime1+",mRebootTime2="+mRebootTime2);
+	}
+
+	private int mUploadMode = -1;
+	private boolean mClrOldPictures;
+	private void cjSetCameraUploadMode(){
+		String brightness = Utils.getProperty(this,Utils.KEY_FTP_IMG_BRIGHTNESS);
+		int mode = ConfigUtil.UPLOAD_MODE_SAVE;
+		mClrOldPictures = false;
+		
+		if("1".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_SAVE;
+		}else if("2".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_REALTIME;
+			mClrOldPictures = true;
+		}else if("3".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_FULL;
+		}else if("4".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_SAVE;
+			mClrOldPictures = true;
+		}else if("5".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_REALTIME;
+			mClrOldPictures = true;
+		}else if("6".equals(brightness)){
+			mode = ConfigUtil.UPLOAD_MODE_FULL;
+			mClrOldPictures = true;
+		}else{
+			Log.i(ConfigUtil.TAG,"initUploadMode policy invalide config compose: brightness="+brightness);
+		}
+		if(mUploadMode != mode){
+			mUploadMode = mode;
+			mVarCommon.setUploadMode(mUploadMode);
+			mConfigChangeMask |= CONFIG_MASK_UPLOAD_MODE;
+		}
+		else if(mClrOldPictures){
+			mConfigChangeMask |= CONFIG_MASK_UPLOAD_MODE;
+		}
+		Log.i(ConfigUtil.TAG,"cjSetCameraUploadMode mUploadMode="+mUploadMode+",mClrOldPictures="+mClrOldPictures);
+	}
+
+	private void cjHandleConfigChange(boolean isInit){
+		Log.i(ConfigUtil.TAG,"cjHandleConfigChange mConfigChangeMask="+mConfigChangeMask);
+		if((mConfigChangeMask & CONFIG_MASK_WORK_POLICY) != 0){
+			//mVarCommon.setDayNightCheckByTime(mWorkPolicy == WORK_POLICY_DAY_WORK_NIGHT_SLEEP);
+			//reset Camera work, so on
+			if((mWorkPolicy == WORK_POLICY_WORK_ALWAYS) || ((mWorkPolicy == WORK_POLICY_DAY_WORK_NIGHT_SLEEP) && !mVarCommon.isCameraFullSleep())){
+				if(isCameraStandby()){
+					setCameraIdle();
+				}
+				if(isCameraSleep()){
+					cjStartCamera();
+				}
+			}else{
+				getmTimer();
+			}
+		}
+		
+		if((mConfigChangeMask & (CONFIG_MASK_WORK_POLICY|CONFIG_MASK_REBOOT_TIME)) != 0){
+			fullSleepTimeCheck();
+		}
+		if((mConfigChangeMask & CONFIG_MASK_CONTINUS_NUM) != 0){
+			setLightEnable();
+		}
+		if((mConfigChangeMask & CONFIG_MASK_UPLOAD_MODE) != 0){
+			if(mClrOldPictures){
+				Log.i(ConfigUtil.TAG,"cjHandleConfigChange clear Utils.IMG_PATH");
+				MiscUtils.deleteSubFiles(Utils.IMG_PATH);
+				resetUploadMode();
+			}
+			if(isInit && !mClrOldPictures){
+				Log.i(ConfigUtil.TAG,"cjHandleConfigChange upload Utils.IMG_PATH");
+				Intent intent = new Intent("com.cj.init_upload");
+				intent.setClass(this, UploadService.class);
+				this.startService(intent);
+			}
+		}
+	}
+
+	private static final int CONFIG_MASK_TRIGGER_MODE = 1<<0;
+	private static final int CONFIG_MASK_REBOOT_TIME = 1<<1;
+	private static final int CONFIG_MASK_WORK_POLICY = 1<<2;
+	private static final int CONFIG_MASK_CONTINUS_NUM = 1<<3;
+	private static final int CONFIG_MASK_UPLOAD_MODE = 1<<4;
+	private int mConfigChangeMask;
+	private void cjSetCameraConfig(boolean isInit){
+		mConfigChangeMask = 0;
+		cjSetCameraTriggerMode();//must set first
+		cjSetCameraRebootTime();//must before set work policy
+		cjSetCameraWorkPolicy();
+		cjSetCameraContinuesNum();
+		cjSetCameraUploadMode();
+		cjHandleConfigChange(isInit);
+		mConfigChangeMask = 0;
+	}
+
+	private static final int TRIGGER_BY_KEY_CAMERA = 0;
+	private static final int TRIGGER_BY_KEY_TEST = 1;
+	private static final int TRIGGER_BY_TIMER = 2;
+	private static final int TRIGGER_BY_SMS = 3;
+	private static final int TRIGGER_BY_ISO = 4;
+	private int mTriggerBy;
+	//private int mTriggerByLast;
+
+	private boolean cjUseLowestPicSize(){
+		return (mTriggerBy == TRIGGER_BY_KEY_TEST);
+	}
+	
+	private void cjTriggerWork(int triggerBy){
+		if(!mTimeSyncDone){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"cjTriggerWork skip by mTimeSyncDone=false");
+			mLogManager.Log("cjTriggerWork skip by mTimeSyncDone=false");
+			return;
+		}
+		
+		if((mCameraTriggerMode == CAMERA_TRIGGER_MODE_KEY) && mVarCommon.isCameraFullSleep()){
+			Log.i(ConfigUtil.TAG,"cjTriggerWork skip by CAMERA_TRIGGER_MODE_KEY && mVarCommon.isCameraFullSleep()");
+			//cjGetFtpStateXml();
+			mLogManager.Log("cjTriggerWork skip by CAMERA_TRIGGER_MODE_KEY && mVarCommon.isCameraFullSleep()");
+			return;
+		}
+
+		if(mStartWork){
+			Log.i(ConfigUtil.TAG_CONTINUES,"cjStartWork skip by key too fast!");
+			//photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
+			//Log.i(ConfigUtil.TAG,"cjTriggerWork photonum="+photonum);
+			mLogManager.Log("cjStartWork skip by key too fast!");
+			return;
+		}
+		mStartWork = true;
+		mTriggerBy = triggerBy;
+		Log.i(ConfigUtil.TAG,"cjTriggerWork by "+triggerBy+", start time="+System.currentTimeMillis());
+		mLogManager.Log("cjTriggerWork by "+triggerBy+", start time="+System.currentTimeMillis());
+
+		boolean delayed = false;
+		if(isCameraStandby()){
+			cjSetCameraZsd(false);
+			setCameraIdle();
+			Log.i(ConfigUtil.TAG, "cjStartWork setCameraIdle delay");
+			MiscUtils.threadSleep(50);
+			delayed = true;
+		}
+
+		setLight(LIGHT_ON);
+		if(/*(ConfigUtil.FEATURE_FLASHLIGHT_CTRL_POLICY == ConfigUtil.FLASHLIGHT_CTRL_BY_DRV)
+			&&*/ isLightEnable(BootCameraService.this)
+			&& !delayed
+			&& (mCameraTriggerMode == CAMERA_TRIGGER_MODE_KEY)){
+			Log.i(ConfigUtil.TAG,"cjTriggerWork drv set light on, delay to work");
+			MiscUtils.threadSleep(ConfigUtil.WORK_AFTER_LIGHT_ON_DELAY_MS);//+ by hcj ,the picture would be black with out delay
+		}
+
+		index = 0;//for picture index
+		photonum=photonum+Integer.parseInt(Utils.getProperty(BootCameraService.this,Utils.KEY_FTP_TAKINGMODEL));
+		Log.i(ConfigUtil.TAG,"cjTriggerWork photonum="+photonum);
+		mLogManager.Log("cjTriggerWork photonum="+photonum);
+		
+		cjStartWork(true);
+	}
+
+	private void cjStartWork(boolean newTrigger){
+		Log.i(ConfigUtil.TAG, "cjStartWork newTrigger="+newTrigger);
+		mLogManager.Log("cjStartWork newTrigger="+newTrigger);
+		if(isCameraStandby()){
+			setCameraIdle();
+		}
+		if(isCameraSleep()){
+			cjStartCamera();
+		}else if(newTrigger){
+			if(cjUseLowestPicSize()){
+				width = 320;
+				height = 240;
+			}else{
+				fileSize=Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
+				String[] size1 = ImgSize.getImgSize(fileSize);
+				height = Integer.parseInt(size1[0]);
+				width = Integer.parseInt(size1[1]);
+			}
+			comSetPreviewSize(width, height);
+		}
+		
+		cjTakPicture();
+	}
+
+	private void cjStartCamera(){
+		cjStartCamera(null);
+	}
+
+	private void cjStartCamera(SurfaceHolder holder){
+		if(mCamera != null){
+			Log.i(ConfigUtil.TAG, "cjStartCamera mCamera != null");
+			return;
+		}
+		Log.i(ConfigUtil.TAG, "cjStartCamera holder="+holder);
+		if(mLogManager != null)
+		mLogManager.Log("cjStartCamera holder="+holder);
+		
+		try{
+			mCamera = Camera.open();
+		}catch(Exception e){
+			Log.i(ConfigUtil.TAG, "cjStartCamera e="+e);
+			if(mLogManager != null)
+			mLogManager.Log("cjStartCamera e="+e);
+		}
+
+		if(mCamera == null){
+			Log.i(ConfigUtil.TAG, "cjStartCamera return by Camera.open() fail");
+			if(mLogManager != null)
+			mLogManager.Log("cjStartCamera return by Camera.open() fail");
+			return;
+		}
+		
+		flag=true;
+		
+		Parameters params = mCamera.getParameters();
+		fileSize=Integer.parseInt(Utils.getProperty(this,Utils.KEY_FTP_FILESIZE));
+		String[] size = ImgSize.getImgSize(fileSize);
+		height = Integer.parseInt(size[0]);
+	       width = Integer.parseInt(size[1]);
+		   Log.i(ConfigUtil.TAG, "cjStartCamera key68="+key68+",mWorkPolicy="+mWorkPolicy);
+		if(cjUseLowestPicSize()){
+ 			params.setPreviewSize(320, 240);
+		}else{
+			params.setPreviewSize(width, height);
+		}
+		//params.setPreviewFrameRate(15);//deprecated
+		//int[] range = new int[2];
+		//params.getPreviewFpsRange(range);
+		//Log.i(ConfigUtil.TAG, "cjStartCamera1 range[0]="+range[0]+",range[1]="+range[1]);//min:5000, max:60000
+		//params.setPreviewFpsRange(ConfigUtil.CAM_PARAM_PREVIEW_FPS,ConfigUtil.CAM_PARAM_PREVIEW_FPS);
+		
+		String triggerModel = Utils.getProperty(this,Utils.KEY_FTP_TRIGGERMODEL);
+		String auto_lighte=Utils.getProperty(BootCameraService.this, Utils.KEY_FTP_IMG_AUTO_LIGHTE);
+		//params.setExposureCompensation(ImgSize.getExposure(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_TIEM))));
+		//params.setWhiteBalance(ImgSize.getWhiteBalance(Integer.parseInt(Utils.getProperty(this, Utils.KEY_FTP_IMG_WHITE_BALANCE))));
+		params.set("zsd-mode", (mWorkPolicy == WORK_POLICY_STANDBY_AFTER_WORK) ? "on" : "off");
+		//params.setEdgeMode("high");
+		params.setContrastMode("high");
+		mCamera.setParameters(params);
+		if(holder != null){
+			try {
+				mCamera.setPreviewDisplay(holder);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		mCamera.startPreview();
+		Log.i(ConfigUtil.TAG,"cjStartCamera delay 1000 by open camera");  
+		if(mLogManager != null)
+		mLogManager.Log("cjStartCamera delay 1000 by open camera");
+		MiscUtils.threadSleep(1000);
+		preview = true;
+		
+		getmTimer();
+		//TakepictureTiem t=new TakepictureTiem(BootCameraService.this);
+		//t.setAlarmTime(Utils.DURING_DAY_MODEL,ConfigUtil.DBG_ISO ? 2: 10,9);
+		if(holder == null){
+			setGetIsoAlarm();
+		}
+	}
+
+	private void cjTakPicture(){
+		if(mCamera == null){
+			mStartWork = false;
+			Log.i(ConfigUtil.TAG,"cjTakPicture skip by mCamera == null");
+			mLogManager.Log("cjTakPicture skip by mCamera == null");
+			return;
+		}
+		/*
+		if(isLightEnable(BootCameraService.this) && setLight(LIGHT_ON)){
+			Log.i(ConfigUtil.TAG,"cjTakPicture app set light on, delay to work");
+			MiscUtils.threadSleep(ConfigUtil.WORK_AFTER_LIGHT_ON_DELAY_MS);//+ by hcj ,the picture would be black with out delay
+		}
+		*/
+		mStartTime = System.currentTimeMillis();
+		Log.i(ConfigUtil.TAG_CONTINUES,"cjTakPicture time="+mStartTime);
+		mLogManager.Log("cjTakPicture time="+mStartTime);
+		mCamera.setOneShotPreviewCallback(BootCameraService.this);
+		getmTimer();
+	}
+
+	private void cjSetCameraZsd(boolean on){
+		if(mCamera == null){
+			Log.i(ConfigUtil.TAG, "cjSetCameraZsd skip by mCamera == null");
+			return;
+		}
+		Log.i(ConfigUtil.TAG, "cjSetCameraZsd on="+on);
+		Parameters params = mCamera.getParameters();
+		params.set("zsd-mode", on ? "on" : "off");
+		mCamera.setParameters(params);
+	}
+
+	private void cjGetFtpStateXml(){
+		sendBroadcast(new Intent("android.intent.action.updatexml"));
+	}
+
+	//
+	private VarCommon mVarCommon = VarCommon.getInstance();
+
+	//alarm
+	private PendingIntent getIsoCheckIntent(){
+		Intent intent = new Intent(Utils.DURING_DAY_MODEL);
+		return PendingIntent.getBroadcast(this, 9, intent,PendingIntent.FLAG_CANCEL_CURRENT);
+	}
+
+	private boolean mIsoAlarmHasSet;
+	private void setGetIsoAlarm(){
+		//TakepictureTiem t=new TakepictureTiem(BootCameraService.this);
+		//t.setAlarmTime(Utils.DURING_DAY_MODEL,10,9);
+		PendingIntent pIntent = getIsoCheckIntent();
+		cancelAlarm(pIntent);
+
+		int timeInMillis = ConfigUtil.ISO_CHECK_PERIOD_MIN;
+		if(!mIsoAlarmHasSet){
+			mIsoAlarmHasSet = true;
+			timeInMillis = 1;
+		}
+		Calendar calendar =Calendar.getInstance();
+		calendar.setTimeInMillis(System.currentTimeMillis());
+		//calendar.add(calendar.MINUTE, timeInMillis);
+		//+ by hcj @{
+		if(ConfigUtil.DBG_ISO && (timeInMillis == ConfigUtil.ISO_CHECK_PERIOD_MIN)){
+			timeInMillis = 2;
+		}
+		//+ by hcj @}
+		//if(albarmTimers == 10){
+		//calendar.add(calendar.MINUTE, timeInMillis+1);
+		//} else {
+		calendar.add(calendar.MINUTE, timeInMillis);
+		//}
+		calendar.set(Calendar.SECOND, uploadSleep);   
+		calendar.clear(calendar.MILLISECOND);
+		//if(ConfigUtil.DBG_DAYNIGHT){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"setGetIsoAlarm set alarm at:"+sdf.format(calendar.getTime()));
+		//}
+		if(mLogManager != null)
+			mLogManager.Log("setGetIsoAlarm set alarm at:"+sdf.format(calendar.getTime()));
+		startAlarm(pIntent,calendar.getTimeInMillis());
+	}
+
+	private void cancelGetIsoAlarm(){
+		PendingIntent pIntent = getIsoCheckIntent();
+		cancelAlarm(pIntent);
+		if(mLogManager != null)
+			mLogManager.Log("cancelGetIsoAlarm");
+	}
+	
+	private PendingIntent getFullSleepCheckIntent(){
+		Intent intent = new Intent("com.cj.alarm.check_day_night_time");
+		return PendingIntent.getBroadcast(this,ALARM_REQUEST_DAY_NIGHT_TIME, 
+			intent,PendingIntent.FLAG_CANCEL_CURRENT);
+	}
+	
+	private static final int ALARM_REQUEST_DAY_NIGHT_TIME = 100;
+	private void setFullSleepCheckAlarm(boolean isFullSleepCurr){
+		if(mWorkPolicy != WORK_POLICY_DAY_WORK_NIGHT_SLEEP){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"setFullSleepCheckAlarm skip by mWorkPolicy != WORK_POLICY_DAY_WORK_NIGHT_SLEEP");
+			return;
+		}
+		PendingIntent pIntent = getFullSleepCheckIntent();
+		cancelAlarm(pIntent);
+		
+		Calendar calendar =Calendar.getInstance();
+		calendar.setTimeInMillis(System.currentTimeMillis());
+		int currHour = calendar.get(Calendar.HOUR_OF_DAY);
+		//calendar.set(Calendar.HOUR_OF_DAY, isFullSleepCurr ? mRebootTime2 : mRebootTime1);
+		calendar.set(Calendar.MINUTE, 0);            //设置闹钟的分钟数
+		calendar.set(Calendar.SECOND, 0);
+		calendar.set(Calendar.MILLISECOND, 0);
+		/*
+		if(isFullSleepCurr && (mRebootTime2 >=0 && mRebootTime2 < mRebootTime1)){
+			//second day
+			calendar.add(Calendar.DAY_OF_MONTH,1);
+		}
+		*/
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"setFullSleepCheckAlarm currHour:"+currHour);
+		/*
+		if(isFullSleepCurr && (currHour < 24 && currHour >= mRebootTime1)){
+			calendar.add(Calendar.DAY_OF_MONTH,1);
+		}*/
+		int toHour = isFullSleepCurr ? mRebootTime2 : mRebootTime1;
+		if(toHour > currHour){
+			calendar.add(Calendar.HOUR_OF_DAY,toHour-currHour);
+		}else{
+			calendar.add(Calendar.HOUR_OF_DAY,24-(currHour-toHour));
+		}
+
+		if(ConfigUtil.DBG_DAYNIGHT){
+			Log.i(ConfigUtil.TAG_DAYNIGHT,"setFullSleepCheckAlarm set alarm at:"+sdf.format(calendar.getTime()));
+		}
+		startAlarm(pIntent,calendar.getTimeInMillis());
+	}
+
+	private void cancelFullSleepCheckAlarm(){
+		cancelAlarm(getFullSleepCheckIntent());
+	}
+		
+	private AlarmManager mAlarmManager;
+
+	private void startAlarm(PendingIntent intent, long timeInMillis){
+		if(mAlarmManager == null){
+			mAlarmManager = (AlarmManager)this.getSystemService(Context.ALARM_SERVICE);
+		}
+		mAlarmManager.setExact(AlarmManager.RTC_WAKEUP, timeInMillis, intent); 
+	}
+
+	private void cancelAlarm(PendingIntent intent){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"cancelAlarm");
+		if(mAlarmManager == null){
+			return;
+		}
+		mAlarmManager.cancel(intent);
+	}
+
+	//time sync
+	private boolean mTimeSyncDone;
+	private void onTimeSyncDone(){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"onTimeSyncDone");
+		mVarCommon.setTimeSyncDone(true);
+		StateRetManager.getInstance(this).onTimeSyncDone();
+		fullSleepTimeCheck();
+		if(!mVarCommon.isCameraFullSleep()){
+			cjResetFullSleepAlarm();
+		}
+		mLogManager = LogManager.getInstance();
+	}
+
+	private void resetUploadMode(){
+		final String tmpXml = "//sdcard/state_w.xml";
+		try{
+			FileInputStream fis = new FileInputStream(Utils.XML_PATH);
+			FileOutputStream fos = new FileOutputStream(tmpXml);
+			InputStreamReader isr = new InputStreamReader(fis,"utf8");
+			BufferedReader br = new BufferedReader(isr);
+			OutputStreamWriter osw = new OutputStreamWriter(fos,"utf8");
+			BufferedWriter bw = new BufferedWriter(osw);
+			String line;
+			while((line=br.readLine()) != null){
+				String stripLine = line.trim();
+				if(stripLine.startsWith("<img_brightness>")){
+					line = "   <img_brightness>"+(mUploadMode+1)+"</img_brightness>";
+				}
+				bw.write(line);
+				bw.write("\n");
+			}
+			bw.close();
+			osw.close();
+			br.close();
+			isr.close();
+
+			//override
+			FileUtils.copyFile(tmpXml,Utils.XML_PATH);
+			new File(tmpXml).delete();
+
+			//upate ftp xml
+			this.sendBroadcast(new Intent("com.gs.updateftpXml"));
+		}catch(Exception e){
+			Log.i(ConfigUtil.TAG,"resetUploadMode e="+e);
+		}
+	}
+
+	private LogManager mLogManager;
+//+ by hcj @}
 }

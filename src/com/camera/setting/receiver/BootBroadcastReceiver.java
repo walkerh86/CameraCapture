@@ -58,6 +58,10 @@ import com.camera.setting.utils.XmlPull;
 //+ by hcj @{
 import com.cj.NetworkUtils;
 import com.cj.ConfigUtil;
+import com.cj.MiscUtils;
+import com.cj.StateRetManager;
+import com.cj.VarCommon;
+import com.camera.setting.ftp.FTP.UploadProgressListener;
 //+ by hcj @}
 
 /**
@@ -145,6 +149,12 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 							manager.reboot("reboot");
 						}else if("dt2016-camera-dt2016".equalsIgnoreCase(msgTxt)){
 							sendBroadcast(ACTION_SMS_RECEIVED);
+					//+ by hcj @{		
+						}else if("dt2016-delete-dt2016".equalsIgnoreCase(msgTxt)){
+							handler.post(new SmsActionRunnable(SMS_ACTION_CLEAR_PIC));
+						}else if("dt2016-reset-dt2016".equalsIgnoreCase(msgTxt)){
+							//handler.post(new SmsActionRunnable(SMS_ACTION_FACTORY_RST));
+					//+ by hcj @{	
 						}else{
 							try{
 								String [] arrText=msgTxt.split("-");
@@ -204,21 +214,28 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 				
 			}else if("android.intent.action.updatexml".equals(action)){
 				try{
-				Thread.sleep(5000);
-				System.out.println("guosong start android.intent.action.updatexml");
+				//Thread.sleep(5000);//- by hcj
+				Log.i(ConfigUtil.TAG,"start android.intent.action.updatexml");
 				final String deivcesId = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
 				executor.execute(new Runnable() {
 					@Override
 					public void run() {
 						  try { 
-								new FTP(mContext).downloadSingleFile("/"+deivcesId+"/state.xml", SAVE_PATH,
+								new FTP(mContext).downloadSingleFile(/*"/"+*/deivcesId+"/state.xml", SAVE_PATH,
 										"state.xml", new DownLoadProgressListener() {
 											@Override
 											public void onDownLoadProgress(String currentStep,long downProcess, File file) {
-												Log.i(TAG, "--updatexml" + currentStep);
+												Log.i(ConfigUtil.TAG, "--updatexml" + currentStep);
 												if (currentStep.equals(Utils.FTP_DOWN_SUCCESS)) {
-													readXml1(mContext,false,SAVE_PATH+ "state.xml");
+													if(!readXml1(mContext,false,SAVE_PATH+ "state.xml")){
+														Log.i(ConfigUtil.TAG,"ftp xml is wrong, override by local xml");
+														handler.post(mUploadXmlRunnable);
+													}else{
+														Log.i(ConfigUtil.TAG,"ftp xml is new, override local xml");
+														copyFile(SAVE_PATH+ "state.xml",Utils.XML_PATH);
+													}
 												}else if (currentStep.equals(Utils.FTP_FILE_NOTEXISTS)){
+												/*
 													Intent intent = new Intent();
 													intent.setAction(Utils.CAMERA_UPLOAD_SERVICE_ACTION);
 													intent.putExtra(Utils.INTENT_CAMERA_NAME_JPG, "state.xml");
@@ -226,11 +243,37 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 													intent.putExtra(Utils.INTENT_UPLOAD_XML, true);
 													intent.setClass(mContext, UploadService.class);
 													mContext.startService(intent);
+												*/
+													Log.i(ConfigUtil.TAG,"ftp xml is missed, override by local xml");
+													handler.post(mUploadXmlRunnable);
 											} 
 											}
 										});
+
+							StateRetManager retManager = StateRetManager.getInstance(mContext);
+							String retFilePath = retManager.genRetFile();
+							Log.i(ConfigUtil.TAG,"retFilePath="+retFilePath);
+							if(retFilePath != null){
+								VarCommon var = VarCommon.getInstance();
+								var.uploadRequest(retFilePath,ConfigUtil.RET_STATE_REMOTE_DIR,new UploadProgressListener(){
+									@Override
+									public void onUploadProgress(String currentStep, long uploadSize, File file){
+										if(currentStep.equals(Utils.FTP_UPLOAD_SUCCESS)){
+											if(file != null)
+											file.delete();
+										}else if(currentStep.equals(Utils.FTP_UPLOAD_FAIL)){
+											if(file != null)
+											file.delete();
+										}else if(currentStep.equals(Utils.FTP_CONNECT_FAIL)){
+											if(file != null)
+											file.delete();
+										}
+										Log.i(ConfigUtil.TAG,"upload ret file step="+currentStep);
+									}
+								});
+							}
 		                        } catch (Exception e) {  
-		                              e.printStackTrace();
+		                              Log.i(ConfigUtil.TAG,"android.intent.action.updatexml e="+e);
 		                     } 
 					}
 				});
@@ -322,12 +365,14 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 		//+ by hcj @{
 		else if(ConfigUtil.DBG_NO_NET){
 			startCamera(context);
+		}else{
+			Log.i(ConfigUtil.TAG,"bootInitXml skip startCamera!!");
 		}
 		//+ by hcj @}
 		String triggerModel = Utils.getProperty(context,Utils.KEY_FTP_TRIGGERMODEL);
 		System.out.println("guosong---triggerModel="+triggerModel);
 		TakepictureTiem takepictureTiem = new TakepictureTiem(context);
-		takepictureTiem.getTimeflagDay();
+		//takepictureTiem.getTimeflagDay();
 		switch (Integer.parseInt(triggerModel)) {
 		case 1:// 电平触发
 			break;
@@ -376,7 +421,8 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 		new Thread(){
 			public void run() {
 				try {
-					Thread.sleep(3*60*1000);
+					//Thread.sleep(3*60*1000);
+					MiscUtils.threadSleep(3*60*1000);
 					if(getcurrYearfalg()){
 						System.out.println("guosong start 时间触发");
 						setTiemTriggerModel(cont);
@@ -422,7 +468,8 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 	 * @param isInit 是否首次解析
 	 * @param path
 	 */
-	private void readXml(Context context,boolean isInit,String path) {
+	private boolean readXml(Context context,boolean isInit,String path) {
+		boolean xmlValid = true;
 		File file = new File(path);
 		Log.i(TAG, "-- xml:"+isInit);
 		if (file != null) {
@@ -430,10 +477,16 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 			try {
 				stream = new FileInputStream(file);
 				CameraStateItem item = new XmlPull().readXml(stream);
-				Utils.saveProperty(context,Utils.KEY_FTP_VERSION, item.getXmlVersion());
-				if(isInit){
-					Utils.saveProperty(context,Utils.KEY_FTP_REBOOTIEM, item.getRebootTiem());
+//+ by hcj @{
+				if(!item.isValid()){
+					Log.i(ConfigUtil.TAG,"readXml checkStateItems fail path:"+path);
+					return false;
 				}
+//+ by hcj @}								
+				Utils.saveProperty(context,Utils.KEY_FTP_VERSION, item.getXmlVersion());
+				//if(isInit){
+					Utils.saveProperty(context,Utils.KEY_FTP_REBOOTIEM, item.getRebootTiem());
+				//}
 				String strTaking = item.getTakingModel().replaceAll(" ", "");
 				int taking = Integer.parseInt(strTaking);
 				if(taking > 3){
@@ -492,16 +545,21 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 //				Log.i(TAG, "-- tiem6:" + item.getTiem6());
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
+				xmlValid = false;
 			}
 //			Utils.saveProperty(context,Utils.KEY_GPIO_OUT_1, "0");
 //			Utils.saveProperty(context,Utils.KEY_GPIO_OUT_2, "0");
 //			Utils.saveProperty(context,Utils.KEY_GPIO_OUT_3, "0");
 //			Utils.saveProperty(context,Utils.KEY_GPIO_OUT_4, "0");
 			bootInitXml(context);
+
+			notifyStateChanged();//+ by hcj
 		}
+		return xmlValid;//+ by hcj
 	}
-	private void readXml1(Context context,boolean isInit,String path) {
-		copyFile(path,Utils.XML_PATH);
+	private boolean readXml1(Context context,boolean isInit,String path) {
+		//copyFile(path,Utils.XML_PATH);//- by hcj
+		boolean xmlValid = true;
 		File file = new File(path);
 		Log.i(TAG, "-- xml:"+isInit);
 		if (file != null) {
@@ -509,10 +567,17 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 			try {
 				stream = new FileInputStream(file);
 				CameraStateItem item = new XmlPull().readXml(stream);
+//+ by hcj @{
+				if(!item.isValid()){
+					Log.i(ConfigUtil.TAG,"readXml1 checkStateItems fail!!!");
+					return false;
+				}
+//+ by hcj @}								
 				if(isInit){
-					Utils.saveProperty(context,Utils.KEY_FTP_REBOOTIEM, item.getRebootTiem());
 					Utils.saveProperty(context,Utils.KEY_FTP_VERSION, item.getXmlVersion());
 				}
+				Utils.saveProperty(context,Utils.KEY_FTP_REBOOTIEM, item.getRebootTiem());
+				
 				String strTaking = item.getTakingModel().replaceAll(" ", "");
 				int taking = Integer.parseInt(strTaking);
 				if(taking > 3){
@@ -539,21 +604,30 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 					Utils.saveProperty(context,Utils.KEY_FTP_USERNAME, item.getFtpUser());
 					Utils.saveProperty(context,Utils.KEY_FTP_URL,item.getFtpUrl());
 					Utils.saveProperty(context,Utils.KEY_FTP_PASSWORD, item.getFtpPassword());
+					/*
 					try {
 						Thread.sleep(8000);
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
+					*/
+					//MiscUtils.threadSleep(8000);
+					/*
 					Intent intent1 = new Intent();  
 		        	intent1.setAction("com.gs.updateftpXml");
 		        	context.sendBroadcast(intent1);
+		        	*/
+		        		handler.postDelayed(mUploadXmlRunnable,8000);
+					/*
 		        	try {
 						Thread.sleep(2000);
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
+					*/
+					//MiscUtils.threadSleep(2000);
 				}
 				String strSize = item.getFileSize().replaceAll(" ", "");
 				int size = Integer.parseInt(strSize);
@@ -582,10 +656,15 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 					PowerManager manager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
 					manager.reboot("reboot");
 				}
+				notifyStateChanged();//+ by hcj
 			} catch (FileNotFoundException e) {
-				e.printStackTrace();
+				//e.printStackTrace();
+				Log.i(ConfigUtil.TAG,"readXml1 e="+e);//+ by hcj
+				xmlValid = false;
 			}
 		}
+
+		return xmlValid;
 	}
 	public static void copyFile(String oldPath, String newPath) { 
         try { 
@@ -863,6 +942,7 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 					intent.putExtra(Utils.INTENT_UPLOAD_XML, true);
 					intent.setClass(mContext, UploadService.class);
 					mContext.startService(intent);
+					
 					Utils.saveSysProperty(mContext, Utils.KEY_SYS_INIT, false);
 					readXml(mContext,true,Utils.XML_PATH);
   		          }else{
@@ -873,30 +953,40 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 				//}
 			//+ by hcj @}	
   		        	Log.i(TAG, "--xml camera upload file service...");
-  		        	intent.setAction(Utils.CAMERA_UPLOAD_FILE_SERVICE_ACTION);
+  		        	//intent.setAction(Utils.CAMERA_UPLOAD_FILE_SERVICE_ACTION);//- by hcj
+  		        	intent.setAction("com.cj.start");
   		        	intent.setClass(mContext, UploadService.class);
   				    mContext.startService(intent);
-  		        	handler.sendEmptyMessageDelayed(DOWNLOAD_FILE, 1000);
+  		        	handler.sendEmptyMessageDelayed(DOWNLOAD_FILE, 1000);//- by hcj
+  		        	//handler.sendEmptyMessage(DOWNLOAD_FILE);//+ by hcj
   		        	handler.removeMessages(BOOT_COMPLETED);
   		          }
   				break;
   			case DOWNLOAD_FILE:
   	  			final String deivcesId = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
-  	  		    Log.i(TAG, "--DOWNLOAD_FILE...");
+  	  		    Log.i(ConfigUtil.TAG, "--DOWNLOAD_FILE...");
 				executor.execute(new Runnable() {
 					@Override
 					public void run() {
-						  Log.i(TAG, "--start DOWNLOAD_FILE...");
+						  Log.i(ConfigUtil.TAG, "--start DOWNLOAD_FILE...");
 						  try { 
-								new FTP(mContext).downloadSingleFile("/"+deivcesId+"/state.xml", SAVE_PATH,
+								new FTP(mContext).downloadSingleFile(/*"/"+*/deivcesId+"/state.xml", SAVE_PATH,
 										"state.xml", new DownLoadProgressListener() {
 											@Override
 											public void onDownLoadProgress(String currentStep,long downProcess, File file) {
-												Log.i(TAG, "--" + currentStep);
+												Log.i(ConfigUtil.TAG, "--" + currentStep);
 												if (currentStep.equals(Utils.FTP_DOWN_SUCCESS)) {
-													readXml(mContext,false,SAVE_PATH+ "state.xml");
+													if(!readXml(mContext,false,SAVE_PATH+ "state.xml")){
+														Log.i(ConfigUtil.TAG,"ftp xml is wrong, override by local xml");
+														readXml(mContext,false,Utils.XML_PATH);
+														handler.post(mUploadXmlRunnable);
+													}else{
+														Log.i(ConfigUtil.TAG,"ftp xml is new, override local xml");
+														copyFile(SAVE_PATH+ "state.xml",Utils.XML_PATH);
+													}
 													Log.i(TAG, "readXml");
 												}else if (currentStep.equals(Utils.FTP_FILE_NOTEXISTS)){
+												/*
 													Intent intent = new Intent();
 													intent.setAction(Utils.CAMERA_UPLOAD_SERVICE_ACTION);
 													intent.putExtra(Utils.INTENT_CAMERA_NAME_JPG, "state.xml");
@@ -904,17 +994,22 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 													intent.putExtra(Utils.INTENT_UPLOAD_XML, true);
 													intent.setClass(mContext, UploadService.class);
 													mContext.startService(intent);
+												*/
+													Log.i(ConfigUtil.TAG,"ftp xml is missed, override by local xml");
+													readXml(mContext,false,Utils.XML_PATH);
+													handler.post(mUploadXmlRunnable);
 													//mContext.sendBroadcast(intent);
 													Log.i(TAG, "not readXml");
 												} else if (currentStep.equals(Utils.FTP_DOWN_FAIL)
 														|| currentStep.equals(Utils.FTP_CONNECT_FAIL)) {
 													handler.sendEmptyMessageDelayed(DOWNLOAD_FILE, 1000);
-													Log.i(TAG, "not readXml...");
+													Log.i(ConfigUtil.TAG, "download ftp xml fail...");
 												} 
 											}
 										});
 		                        } catch (Exception e) {  
-		                              e.printStackTrace();
+		                              //e.printStackTrace();
+		                              Log.i(ConfigUtil.TAG,"boot DOWNLOAD_FILE e="+e);
 		                     } 
 					}
 				});
@@ -965,13 +1060,14 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 	        if ( time - lastClickTime < 1000) { 
 	        	new Thread(){
 	        		public void run() {
-	        			try {
-							Thread.sleep(1000);
+	        			//try {
+							//Thread.sleep(1000);
+							MiscUtils.threadSleep(1000);
 							cameraTakepicture(scanCode,"isFastClick");
-						} catch (InterruptedException e) {
+						//} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
+							//e.printStackTrace();
+						//}
 	        			
 	        		};
 	        	}.start();
@@ -1011,4 +1107,45 @@ public class BootBroadcastReceiver extends BroadcastReceiver{
 		context.startService(intent);
 	}
 
+//+ by hcj @{
+	private void updateFtpXml(){
+	        mContext.sendBroadcast(new Intent("com.gs.updateftpXml"));
+	}
+
+	private Runnable mUploadXmlRunnable = new Runnable(){
+		@Override
+		public void run(){
+			Log.i(ConfigUtil.TAG,"mUploadXmlRunnable broadcast com.gs.updateftpXml");
+			updateFtpXml();
+		}
+	};
+
+	private void notifyStateChanged(){
+		mContext.sendBroadcast(new Intent("com.cj.state_changed"));
+	}
+
+	private static final int SMS_ACTION_CLEAR_PIC = 1;
+	private static final int SMS_ACTION_FACTORY_RST = 2;
+	private class SmsActionRunnable implements Runnable{
+		private int mAction;
+		
+		public SmsActionRunnable(int action){
+			mAction = action;
+			Log.i(ConfigUtil.TAG_SMS,"SmsActionRunnable action="+action);
+		}
+		
+		@Override
+		public void run(){
+			Log.i(ConfigUtil.TAG_SMS,"SmsActionRunnable run mAction="+mAction);
+			if(mAction == SMS_ACTION_CLEAR_PIC){
+				MiscUtils.deleteSubFiles(Utils.IMG_PATH);
+			}else if(mAction == SMS_ACTION_FACTORY_RST){
+				Intent intent = new Intent(Intent.ACTION_MASTER_CLEAR);
+				intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+				intent.putExtra(Intent.EXTRA_REASON, "MasterClearConfirm");
+				mContext.sendBroadcast(intent);
+			}
+		}
+	}
+//+ by hcj @}
 }

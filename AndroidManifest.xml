@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.camera.setting"
-    android:versionCode="308"
-    android:versionName="308" 
+    android:versionCode="311"
+    android:versionName="311" 
     android:sharedUserId="android.uid.system">
 
     <uses-sdk
@@ -80,7 +80,7 @@
                 <action android:name="android.deivce.ALARM_CANCEL_5" />
                 <action android:name="android.deivce.ALARM_CANCEL_6" />
                 <action android:name="android.deivce.ALARM_RBOOT" />
-                <action android:name="android.deivce.DURING_DAY_MODEL" />
+                <!--<action android:name="android.deivce.DURING_DAY_MODEL" />-->
                 <action android:name="android.deivce.ALARM_TIME_ERROR" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
@@ -97,6 +97,8 @@
             android:exported="true" >
             <intent-filter>
                 <action android:name="android.camera.start" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </service>
         <service

@@ -15,6 +15,8 @@ import android.content.Intent;
 import android.os.SystemClock;
 //+ by hcj @{
 import com.cj.ConfigUtil;
+import com.cj.LogManager;
+
 import android.util.Log;
 //+ by hcj @}
 
@@ -149,6 +151,7 @@ public class TakepictureTiem {
         	}
         }
         alarmManager.setExact(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender);
+		LogManager.getInstance().Log("startTakepictureTiem at:"+LogManager.mSdf.format(calendar.getTime())+",action="+action+",requestCode="+requestCode);
 	}
 	
 	public  void setAlarmTime(String action,int timeInMillis, int requestCode) {
@@ -178,6 +181,7 @@ public class TakepictureTiem {
         calendar.set(Calendar.SECOND, BootCameraService.uploadSleep);   
 	    calendar.clear(calendar.MILLISECOND);
 	    alarmManager.setExact(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender); 
+		LogManager.getInstance().Log("setAlarmTime at:"+LogManager.mSdf.format(calendar.getTime())+",action="+action+",requestCode="+requestCode);
 	}
 
 	/**
@@ -230,6 +234,7 @@ public class TakepictureTiem {
 		sender = PendingIntent.getBroadcast(mContext,8, intent,PendingIntent.FLAG_CANCEL_CURRENT);
 		alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, 2*60*1000, sender);
 	}
+	/*
 	public void getTimeflagDay(){
 		System.out.println("guosong DEIVCE_ALARM_TIME_FLAG_DAY_ACTION =====start");
 		Intent intent = new Intent(mContext, AlarmReceiver.class);
@@ -238,6 +243,7 @@ public class TakepictureTiem {
 		sender = PendingIntent.getBroadcast(mContext,9, intent,PendingIntent.FLAG_CANCEL_CURRENT);
 		alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, 60*1000, sender);
 	}
+	*/
 	public  void closeTakepictureTiem(PendingIntent sender) {
 		alarmManager.cancel(sender);
 	}

@@ -18,6 +18,8 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 import com.cj.ConfigUtil;//+ by hcj
+import com.cj.LogManager;
+import com.cj.VarCommon;
 
 public class AlarmReceiver extends BroadcastReceiver {
 	private static final String TAG = AlarmReceiver.class.getSimpleName();
@@ -148,6 +150,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 	@Override
 	public void onReceive(final Context context, Intent intent) {
 		Log.i(TAG, "--aciton:" + intent.getAction());
+		LogManager.getInstance().Log("AlarmReciver onReceive aciton="+ intent.getAction());
 		this.mContext=context;
 		TakepictureTiem.startMin=0;
 		alarm = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
@@ -282,14 +285,20 @@ public class AlarmReceiver extends BroadcastReceiver {
 				PowerManager manager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
 				manager.reboot("reboot");
 			}
+/*- by hcj
 		}else if(intent.getAction().equals(Utils.DURING_DAY_MODEL)){
 			System.out.println("AlarmReciver="+Utils.DURING_DAY_MODEL);
+			if(VarCommon.getInstance().isCameraFullSleep()){
+				Log.i(ConfigUtil.TAG_DAYNIGHT,"skip reset DURING_DAY_MODEL alarm by VarCommon.getInstance().isCameraFullSleep()");
+				return;
+			}
 			t.setAlarmTime(Utils.DURING_DAY_MODEL,10,9);
 			//BootCameraService.flagDay(context);
 			Intent i=new Intent();
 			i.setPackage("com.camera.setting");
 			i.setAction("com.gs.getIso");
 			context.sendBroadcast(i);
+*/
 		}else if(Utils.DEIVCE_ALARM_TIME_ERROR_ACTION.equals(intent.getAction())){
 			System.out.println("time= is ok,");
 			if(BootBroadcastReceiver.getcurrYearfalg()){
@@ -302,6 +311,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 			}
 		}else if(Intent.ACTION_TIME_CHANGED.equals(intent.getAction())
 				||Intent.ACTION_TIMEZONE_CHANGED.equals(intent.getAction())){
+				Log.i(ConfigUtil.TAG,"time or zone changed");
 			//时间变化需要重新计�?
 			if(triggerModel!=null && triggerModel.trim().equals("3")){
 				if(BootBroadcastReceiver.getcurrYearfalg()){
@@ -318,6 +328,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 		PendingIntent sender = PendingIntent.getBroadcast(context, requestCode, intentAlarm, 0);
 		AlarmManager alarm = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
 		alarm.cancel(sender);
+		LogManager.getInstance().Log("cancelTime action="+action+",requestCode="+requestCode);
 	}
 	public static String readTxtFile(String filePath) {
 		String lineTxt1 = null;
