@@ -1,0 +1,1 @@
+java -jar signapk.jar platform.x509.pem platform.pk8 ../CameraSettingServics-0930-1/bin/CameraSettingServics.apk CameraSettingServics.apk

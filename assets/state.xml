@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- 服务器state.xml文件，只可修改数据值，不可修改文件格式。-->
+<CameraConfig> 
+   <!-- rebooTime 重启设备时间   01-00 -->
+   <rebooTime>01-00</rebooTime>  
+		
+        
+   <!-- triggerModel触发模式   1:电平触发    2:485触发     3:时间触发   -->
+   <triggerModel>1</triggerModel> 
+		
+        
+   <!-- takingModel 拍照模式   1:单拍  2:两拍  3:三连拍     只存在这三种拍照模式    -->
+   <takingModel>1</takingModel>
+     	   
+   <!-- fileSize 图片分辨率设置    
+   1：   240*320   
+   2：   640*480  
+   3：   1024*768  
+   4：   1280*720  
+   5：   1280*768  
+   6：   1280*960  
+   7：   1600*1200  
+   8：   1920*1088  
+   9：   2048*1536  
+   10：2560*1440  
+   11：2560*1920  
+   12：3264*2448     -->
+   <fileSize>4</fileSize>
+   
+   
+   <!-- img_time  图片曝光时间  值：1 - 10 -->
+   <img_time>1</img_time>
+   
+   
+   <!-- img_brightness  图片亮度  值：1 - 10 -->
+   <img_brightness>1</img_brightness>
+  
+   
+   <!-- img_white_balance  图片白平衡  值：1 - 10 -->
+   <img_white_balance>1</img_white_balance>
+  
+  <!-- auto_light  自动补光  ：0=关 ，1=开  -->
+   <auto_light>0</auto_light>
+	   
+	<!-- ftp服务器 -->
+	<ftpService>
+	  <!-- ftpUrl 服务器地址 -->
+	    <ftpUrl>120.55.65.142</ftpUrl>
+		
+	    
+	  <!-- ftpUser 帐号 -->
+	     <ftpUser>ftp01</ftpUser>
+		 
+	     
+	   <!-- ftpPassword 密码 -->
+	     <ftpPassword>Kand2004</ftpPassword>
+	</ftpService>
+	
+	  <!-- TimeModel时间间隔设置  后者时间必须是大于或等于前者时间，或则视为无效时间， -->
+	  <!-- 例如：Time1 02-05-3，凌晨2点到凌晨5点3分钟一次抓拍，那么Time2必须设置是大于大于或等于凌晨5点 ,Time2 06-08-5 凌晨6点到早上8点5分钟一次  -->
+        <timeModel>
+           <time1>00-01-10</time1>
+           <time2>03-05-10</time2>
+           <time3>05-08-5</time3>
+           <time4>08-13-3</time4>
+           <time5>15-21-3</time5>
+           <time6>21-23-5</time6>
+        </timeModel>
+
+</CameraConfig>
