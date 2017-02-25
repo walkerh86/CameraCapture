@@ -1,7 +1,7 @@
 package com.cj;
 
 public class ConfigUtil{
-	public static final boolean DBG = true;
+	public static final boolean DBG = false;
 	public static final boolean DBG_NO_NET = DBG && false;
 	public static final boolean DBG_NETWORK_WIFI = DBG && false;
 	public static final boolean DBG_BROADCAST_TAKE_PIC = DBG && false;
@@ -10,6 +10,7 @@ public class ConfigUtil{
 	public static final boolean DBG_ISO = DBG && false;
 	public static final boolean DBG_DAYNIGHT = DBG && true;
 	public static final boolean DBG_DAYNIGHT_ALARM = DBG && false;
+	public static final boolean DBG_UPGRADE = DBG && true;
 
 	public static final String TAG = "hcj";
 	public static final String TAG_UPGRADE = "hcj.upgrade";

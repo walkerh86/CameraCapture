@@ -1219,9 +1219,9 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 		Calendar calendar = Calendar.getInstance();
 		calendar.setTimeInMillis(System.currentTimeMillis());
 		int hour = calendar.get(Calendar.HOUR_OF_DAY);
-		if(ConfigUtil.DBG_DAYNIGHT){
-			Log.i(ConfigUtil.TAG_DAYNIGHT,"isFullSleepTime current time1:"+sdf.format(calendar.getTime()));
-		}
+		//if(ConfigUtil.DBG_DAYNIGHT){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"isFullSleepTime current time1:"+sdf.format(calendar.getTime()));
+		//}
 		Log.i(ConfigUtil.TAG_DAYNIGHT,"isFullSleepTime hour="+hour+",mRebootTime1="+mRebootTime1+",mRebootTime2="+mRebootTime2);
 		//return !(hour >= mRebootTime2 && hour < mRebootTime1);
 		return (mRebootTime1 < mRebootTime2 && (hour >= mRebootTime1 && hour < mRebootTime2))
@@ -1905,9 +1905,9 @@ public class BootCameraService extends Service implements PreviewCallback,Surfac
 			calendar.add(Calendar.HOUR_OF_DAY,24-(currHour-toHour));
 		}
 
-		if(ConfigUtil.DBG_DAYNIGHT){
-			Log.i(ConfigUtil.TAG_DAYNIGHT,"setFullSleepCheckAlarm set alarm at:"+sdf.format(calendar.getTime()));
-		}
+		//if(ConfigUtil.DBG_DAYNIGHT){
+		Log.i(ConfigUtil.TAG_DAYNIGHT,"setFullSleepCheckAlarm set alarm at:"+sdf.format(calendar.getTime()));
+		//}
 		startAlarm(pIntent,calendar.getTimeInMillis());
 	}
 

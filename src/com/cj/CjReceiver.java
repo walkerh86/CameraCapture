@@ -46,7 +46,11 @@ public class CjReceiver extends BroadcastReceiver{
 		//context.startService(intent);
 		android.os.Process.killProcess(android.os.Process.myPid());
 		*/
+		PowerManager powerManager=(PowerManager) context.getSystemService(Context.POWER_SERVICE); 
+		powerManager.reboot("reboot");
+		/*
 		VarCommon var = VarCommon.getInstance();
+		Log.i(ConfigUtil.TAG_UPGRADE, "deleteRequest var="+var);
 		var.deleteRequest("updata",new DeleteFileProgressListener(){
 			@Override
 			public void onDeleteProgress(String currentStep){
@@ -54,5 +58,6 @@ public class CjReceiver extends BroadcastReceiver{
 				powerManager.reboot("reboot");
 			}
 		});
+		*/
 	}
 }

@@ -8,6 +8,7 @@ import java.io.IOException;
 import org.apache.commons.net.ftp.FTPFile;
 
 import com.camera.setting.ftp.FTP;
+import com.camera.setting.ftp.FTP.DeleteFileProgressListener;
 import com.camera.setting.ftp.FTP.DownLoadProgressListener;
 import com.camera.setting.ftp.FTP.UploadProgressListener;
 import com.camera.setting.servics.BootCameraService;
@@ -59,7 +60,7 @@ public class UpgradeManager implements Runnable{
 				apkCheckUpgradeIsOk();
 			}
 			apkCheckUpgrade();
-			//MiscUtils.threadSleep(ConfigUtil.UPGRADE_CHECK_PERIOD_MS);
+			//MiscUtils.threadSleep(ConfigUtil.DBG_UPGRADE ? 1000*60*1 : ConfigUtil.UPGRADE_CHECK_PERIOD_MS);
 			break;
 		}
 	}
@@ -93,6 +94,7 @@ public class UpgradeManager implements Runnable{
 		}
 		if(installVerCode == mLocalVerCode){
 			apkSetResult(mLocalVerCode,UPGRADE_RET_OK, 0);
+			deleteRemoteApk();
 		}
 		Editor editor = preference.edit();
 		editor.putInt("key_apk_install_vercode",-1);
@@ -321,6 +323,7 @@ public class UpgradeManager implements Runnable{
 		}
 	}
 
+	//system->data would receive this callback, data->data cannot
 	private class MyPackageInstallObserver extends IPackageInstallObserver.Stub{  
 		@Override  
 		public void packageInstalled(String packageName, int returnCode) {
@@ -349,6 +352,33 @@ public class UpgradeManager implements Runnable{
 			out[j++] = DIGITS_LOWER[0x0F & data[i]];
 		}
 		return new String(out);
+	}
+
+	private void deleteRemoteApk(){
+		/*
+		VarCommon var = VarCommon.getInstance();
+		Log.i(ConfigUtil.TAG_UPGRADE, "deleteRemoteApk var="+var);
+		var.deleteRequest("updata",new DeleteFileProgressListener(){
+			@Override
+			public void onDeleteProgress(String currentStep){
+				
+			}
+		});*/
+		
+		//mk root dir
+		String remotePath = SystemProperties.get(Utils.SYSTEM_KEY_DEIVCES_ID);
+		
+		//mk sub dir
+		remotePath += "/updata";
+		Log.i(ConfigUtil.TAG, "deleteRemoteApk remotePath="+remotePath);
+		
+		mFtpClient.deleteUpgradeFiles(remotePath, new DeleteFileProgressListener(){
+			@Override
+			public void onDeleteProgress(String currentStep){
+				Log.i(ConfigUtil.TAG, "onDeleteProgress currentStep="+currentStep);
+			}
+		});
+		Log.i(ConfigUtil.TAG, "deleteRemoteApk done");
 	}
 
 	public class UpgradeResultProcess extends LoopProcess{
